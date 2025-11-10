@@ -6,7 +6,7 @@ Combines inputs from Internet Picks and Data-Driven agents to make final betting
 import json
 import asyncio
 from typing import Dict, List, Optional
-from google.adk import LlmAgent
+from google.adk.agents import LlmAgent
 from .utils.logging_config import get_logger
 
 logger = get_logger(__name__)

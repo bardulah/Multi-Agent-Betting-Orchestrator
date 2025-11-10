@@ -6,7 +6,7 @@ Searches for betting tips and predictions from online sources using ADK's built-
 import json
 import asyncio
 from typing import Dict, List
-from google.adk import LlmAgent
+from google.adk.agents import LlmAgent
 from google.adk.tools import google_search
 from .utils.logging_config import get_logger
 

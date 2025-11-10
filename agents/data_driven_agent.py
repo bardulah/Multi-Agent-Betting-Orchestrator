@@ -6,7 +6,7 @@ Analyzes matches based on statistics, form, and objective data using ADK's built
 import json
 import asyncio
 from typing import Dict, List
-from google.adk import LlmAgent
+from google.adk.agents import LlmAgent
 from google.adk.tools import google_search
 from .utils.logging_config import get_logger
 
