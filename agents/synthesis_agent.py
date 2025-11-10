@@ -164,11 +164,17 @@ Provide your final decision in JSON format.
 """
 
         try:
-            # Run the ADK agent
-            response = await self.agent.run_async(prompt)
+            # Run the ADK agent - it returns an async generator of events
+            result_text = ""
+            async for event in self.agent.run_async(prompt):
+                # Collect text from events
+                if hasattr(event, 'content') and event.content:
+                    result_text += str(event.content)
+                elif hasattr(event, 'text') and event.text:
+                    result_text += str(event.text)
 
-            # Extract response text
-            result_text = self._extract_text(response)
+            if not result_text:
+                result_text = "No response from agent"
 
             # Parse response
             decision = self._parse_response(result_text)
