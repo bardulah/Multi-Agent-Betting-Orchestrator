@@ -1,0 +1,20 @@
+{
+  "name": "flashscore-scraper",
+  "version": "1.0.0",
+  "description": "Puppeteer-based scraper for Flashscore match odds",
+  "main": "src/flashscore-scraper.js",
+  "scripts": {
+    "scrape": "node src/flashscore-scraper.js",
+    "test": "node src/flashscore-scraper.js --test"
+  },
+  "keywords": ["scraper", "puppeteer", "flashscore", "betting", "odds"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "puppeteer": "^21.6.1",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "yaml": "^2.3.4",
+    "dotenv": "^16.3.1"
+  }
+}

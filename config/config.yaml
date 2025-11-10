@@ -1,0 +1,72 @@
+# Multi-Agent Betting System Configuration
+
+# Sports to scrape (football, hockey, basketball, tennis)
+sports:
+  - football
+  - basketball
+  - tennis
+
+# Scraper settings
+scraper:
+  headless: true
+  rate_limit_delay: 2000  # milliseconds between requests
+  timeout: 30000  # page load timeout
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  viewport:
+    width: 1920
+    height: 1080
+
+# Google Search API settings (you'll need to add your API key)
+google_search:
+  api_key: "YOUR_GOOGLE_API_KEY"  # Set via environment variable GOOGLE_API_KEY
+  search_engine_id: "YOUR_SEARCH_ENGINE_ID"  # Set via environment variable GOOGLE_SEARCH_ENGINE_ID
+  max_results: 10
+
+# Agent settings
+agents:
+  internet_picks:
+    search_queries_per_match: 3
+    max_sources: 5
+
+  data_driven:
+    search_queries_per_match: 4
+    analysis_depth: "detailed"  # quick, standard, detailed
+
+  synthesis:
+    min_value_threshold: 1.05  # Minimum odds value to consider
+    confidence_threshold: 0.7  # 0-1 scale for recommendation confidence
+
+# Notification settings
+notifications:
+  enabled: true
+  method: "email"  # email, telegram, or both
+
+  email:
+    smtp_server: "smtp.gmail.com"
+    smtp_port: 587
+    sender_email: "your-email@gmail.com"
+    sender_password: "YOUR_APP_PASSWORD"  # Set via environment variable EMAIL_PASSWORD
+    recipient_email: "recipient@example.com"
+
+  telegram:
+    bot_token: "YOUR_TELEGRAM_BOT_TOKEN"  # Set via environment variable TELEGRAM_BOT_TOKEN
+    chat_id: "YOUR_CHAT_ID"  # Set via environment variable TELEGRAM_CHAT_ID
+
+# Logging
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  file: "logs/betting_system.log"
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Scheduling
+schedule:
+  enabled: true
+  time: "09:00"  # Daily run time (24-hour format)
+  timezone: "UTC"
+
+# Data storage
+storage:
+  matches_file: "data/matches.json"
+  results_file: "data/results.json"
+  history_file: "data/history.json"
