@@ -1,6 +1,8 @@
 # Multi-Agent Betting System
 
-A sophisticated multi-agent system leveraging Google's Agent Development Kit (ADK) for automated sports betting analysis. The system scrapes match data, analyzes it from multiple perspectives, and provides intelligent betting recommendations.
+A sophisticated multi-agent system leveraging **Google's Agent Development Kit (ADK)** for automated sports betting analysis. The system scrapes match data, analyzes it from multiple perspectives using real ADK LlmAgent instances, and provides intelligent betting recommendations.
+
+> **✨ Built with proper Google ADK** - Uses `google.adk.LlmAgent` and ADK's built-in `google_search` tool (FREE!)
 
 ## 🎯 Features
 
@@ -49,8 +51,8 @@ A sophisticated multi-agent system leveraging Google's Agent Development Kit (AD
 - **Python 3.8+**
 - **Node.js 16+**
 - **npm**
-- **Google Cloud API Key** (for Google GenAI and Search)
-- **Email account** (for email notifications) OR **Telegram Bot** (for Telegram notifications)
+- **Google API Key** (for ADK/GenAI - get from [Google AI Studio](https://makersuite.google.com/app/apikey))
+- **Email account** (for notifications) OR **Telegram Bot** (optional)
 
 ## 🚀 Installation
 
@@ -84,14 +86,13 @@ cp config/.env.example config/.env
 Edit `config/.env` and add your credentials:
 
 ```env
-# Google API
+# Google API (REQUIRED - ADK includes FREE google_search tool!)
 GOOGLE_API_KEY=your_google_api_key_here
-GOOGLE_SEARCH_ENGINE_ID=your_search_engine_id_here
 
-# Email (Gmail app password)
+# Email (for Gmail, use app password)
 EMAIL_PASSWORD=your_email_app_password_here
 
-# Telegram
+# Telegram (optional)
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 TELEGRAM_CHAT_ID=your_telegram_chat_id_here
 ```
@@ -108,16 +109,12 @@ Edit `config/config.yaml` to customize:
 
 ### Google API Setup
 
-1. **Google GenAI API**:
+1. **Google API Key** (Required):
    - Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
    - Create an API key
    - Add to `.env` as `GOOGLE_API_KEY`
 
-2. **Google Custom Search API**:
-   - Create a [Custom Search Engine](https://programmablesearchengine.google.com/)
-   - Get your Search Engine ID
-   - Enable Custom Search API in Google Cloud Console
-   - Add credentials to `.env`
+   > **💡 That's it!** ADK's built-in `google_search` tool is FREE and doesn't require Custom Search API setup!
 
 ### Email Setup (Gmail)
 

@@ -16,13 +16,8 @@ scraper:
     width: 1920
     height: 1080
 
-# Google Search API settings (you'll need to add your API key)
-google_search:
-  api_key: "YOUR_GOOGLE_API_KEY"  # Set via environment variable GOOGLE_API_KEY
-  search_engine_id: "YOUR_SEARCH_ENGINE_ID"  # Set via environment variable GOOGLE_SEARCH_ENGINE_ID
-  max_results: 10
-
 # Agent settings
+# Note: Google ADK's built-in google_search tool is FREE and requires only GOOGLE_API_KEY
 agents:
   internet_picks:
     search_queries_per_match: 3

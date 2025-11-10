@@ -1,225 +1,248 @@
 """
-Data-Driven Analysis Agent
-Analyzes matches based on statistics, form, and objective data
+Data-Driven Analysis Agent - ADK Implementation
+Analyzes matches based on statistics, form, and objective data using ADK's built-in google_search
 """
 
-import os
+import json
+import asyncio
 from typing import Dict, List
-from google import genai
-from google.genai import types
-from .utils.search import GoogleSearchHelper
+from google.adk import LlmAgent
+from google.adk.tools import google_search
 from .utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
 
+def create_data_driven_agent(config: Dict) -> LlmAgent:
+    """
+    Create an ADK LlmAgent that analyzes matches using statistical data
+
+    Args:
+        config: System configuration dictionary
+
+    Returns:
+        Configured LlmAgent instance
+    """
+
+    instruction = """You are a sports data analyst specializing in objective statistical analysis.
+
+Your task: For each match provided, search for and analyze statistical data to make data-driven predictions.
+
+Process:
+1. Use Google Search to find relevant statistics for this matchup
+2. Search for: head-to-head records, recent form, home/away performance, injuries, lineups
+3. Analyze trends and patterns from the data
+4. Make predictions based ONLY on objective data
+5. Do NOT reference betting odds, tips, or expert opinions
+
+Search queries to use:
+- "[home_team] vs [away_team] head to head statistics"
+- "[home_team] recent form results [sport]"
+- "[away_team] recent form results [sport]"
+- "[home_team] vs [away_team] injuries news lineup"
+
+Output Format (JSON):
+{
+    "picks": ["home_win", "away_win", "draw", "over", "under", "btts"],
+    "confidence": 0.0-1.0,
+    "key_factors": ["list of important factors"],
+    "analysis": "detailed analysis based on data",
+    "statistics": {
+        "head_to_head": "summary",
+        "home_form": "summary",
+        "away_form": "summary"
+    }
+}
+
+Important Rules:
+- Base analysis ONLY on objective data and statistics
+- DO NOT use betting tips, odds, or subjective opinions
+- Focus on: recent results, form, injuries, head-to-head, home/away records
+- If data is insufficient, return lower confidence
+- Always use google_search tool before responding
+- Be factual and data-driven
+"""
+
+    agent = LlmAgent(
+        name="data_driven_agent",
+        model="gemini-2.0-flash-exp",
+        instruction=instruction,
+        tools=[google_search],
+        description="Analyzes matches using statistical and objective data",
+    )
+
+    return agent
+
+
 class DataDrivenAgent:
     """
-    Agent that analyzes matches using statistical and objective data
-    Does NOT use external betting tips or opinions
+    Wrapper for ADK Data-Driven Agent with sync interface
     """
 
     def __init__(self, config: Dict):
         self.config = config
-        self.search_helper = GoogleSearchHelper()
-
-        # Initialize Google GenAI client
-        api_key = os.getenv('GOOGLE_API_KEY')
-        if api_key:
-            self.client = genai.Client(api_key=api_key)
-        else:
-            logger.warning("GOOGLE_API_KEY not set, using mock responses")
-            self.client = None
+        self.agent = create_data_driven_agent(config)
+        logger.info("Data-Driven Agent (ADK) initialized")
 
     def analyze_match(self, match: Dict) -> Dict:
         """
-        Analyze a match using statistical and objective data
+        Analyze a match using the ADK agent (sync wrapper)
 
         Args:
             match: Match data dictionary
 
         Returns:
-            Analysis result with data-driven picks and reasoning
+            Analysis result dictionary
+        """
+        # Run async method in event loop
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        return loop.run_until_complete(self.analyze_match_async(match))
+
+    async def analyze_match_async(self, match: Dict) -> Dict:
+        """
+        Analyze a match using the ADK agent (async)
+
+        Args:
+            match: Match data dictionary
+
+        Returns:
+            Analysis result dictionary
         """
         logger.info(f"Data-Driven: Analyzing {match['homeTeam']} vs {match['awayTeam']}")
 
-        # Search for statistical data
-        search_results = self.search_helper.search_match_stats(
-            match['homeTeam'],
-            match['awayTeam'],
-            match['sport']
-        )
-
-        if not search_results:
-            logger.warning(f"No statistical data found for match {match['id']}")
-            return {
-                'match_id': match['id'],
-                'picks': [],
-                'confidence': 0.0,
-                'data_sources': [],
-                'analysis': 'Insufficient data for analysis'
-            }
-
-        # Use ADK agent to analyze data and generate picks
-        analysis = self._analyze_with_adk(match, search_results)
-
-        return {
-            'match_id': match['id'],
-            'homeTeam': match['homeTeam'],
-            'awayTeam': match['awayTeam'],
-            'sport': match['sport'],
-            'picks': analysis.get('picks', []),
-            'confidence': analysis.get('confidence', 0.0),
-            'data_sources': [r['link'] for r in search_results[:5]],
-            'analysis': analysis.get('analysis', ''),
-            'key_factors': analysis.get('key_factors', []),
-            'statistics': analysis.get('statistics', {})
-        }
-
-    def _analyze_with_adk(self, match: Dict, search_results: List[Dict]) -> Dict:
-        """
-        Use Google ADK to analyze statistical data
-
-        Args:
-            match: Match data
-            search_results: List of search result dictionaries
-
-        Returns:
-            Structured analysis
-        """
-        if not self.client:
-            # Mock response when API key not available
-            return {
-                'picks': ['home_win'],
-                'confidence': 0.5,
-                'analysis': 'Mock analysis - API key not configured',
-                'key_factors': ['Home advantage', 'Recent form'],
-                'statistics': {}
-            }
-
-        # Prepare data summary
-        data_text = "\n\n".join([
-            f"Source {i+1}: {r['title']}\n{r['snippet']}\nURL: {r['link']}"
-            for i, r in enumerate(search_results[:15])
-        ])
-
-        prompt = f"""You are a sports data analyst. Analyze the following match using ONLY objective data and statistics.
+        prompt = f"""Analyze this match using statistical and objective data:
 
 Match: {match['homeTeam']} vs {match['awayTeam']}
 Sport: {match['sport']}
 League: {match.get('league', 'Unknown')}
+Date: {match.get('date', 'Today')}
+Time: {match.get('time', 'TBD')}
 
-Statistical Data Sources:
-{data_text}
-
-Your task:
-1. Extract relevant statistics (head-to-head, recent form, home/away records)
-2. Identify key factors that could influence the outcome
-3. Note any injuries, suspensions, or lineup changes
-4. Analyze historical trends and patterns
-5. Make data-driven predictions
-
-IMPORTANT RULES:
-- Base your analysis ONLY on objective data and statistics
-- DO NOT reference betting tips, odds, or expert opinions
-- DO NOT use subjective assessments
-- Focus on: form, results, statistics, injuries, head-to-head records
-
-Provide your analysis in the following format:
-1. Key Statistics Summary
-2. Form Analysis (recent results for both teams)
-3. Head-to-Head Record
-4. Key Factors (injuries, home advantage, etc.)
-5. Data-Driven Prediction with reasoning
-6. Confidence Level (0.0 to 1.0)
-
-Format your prediction as one of: home_win, away_win, draw, over, under, or btts (both teams to score)
+Search for relevant statistics and provide a data-driven analysis in JSON format.
+Do NOT reference betting tips or opinions - only use objective data.
 """
 
         try:
-            response = self.client.models.generate_content(
-                model='gemini-2.0-flash-exp',
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,  # Lower temperature for more factual analysis
-                    max_output_tokens=1500
-                )
-            )
+            # Run the ADK agent
+            response = await self.agent.run_async(prompt)
 
-            analysis_text = response.text
+            # Extract response text
+            result_text = self._extract_text(response)
 
-            # Parse the response to extract structured data
-            picks = self._extract_picks(analysis_text)
-            confidence = self._extract_confidence(analysis_text)
-            key_factors = self._extract_key_factors(analysis_text)
-            statistics = self._extract_statistics(analysis_text)
+            # Parse response
+            analysis = self._parse_response(result_text)
 
             return {
-                'picks': picks,
-                'confidence': confidence,
-                'analysis': analysis_text[:800],
-                'key_factors': key_factors,
-                'statistics': statistics
+                'match_id': match['id'],
+                'homeTeam': match['homeTeam'],
+                'awayTeam': match['awayTeam'],
+                'sport': match['sport'],
+                'picks': analysis.get('picks', []),
+                'confidence': analysis.get('confidence', 0.0),
+                'data_sources': [],  # ADK search tool handles this internally
+                'analysis': analysis.get('analysis', result_text[:800]),
+                'key_factors': analysis.get('key_factors', []),
+                'statistics': analysis.get('statistics', {})
             }
 
         except Exception as e:
-            logger.error(f"Error in ADK analysis: {e}")
+            logger.error(f"Error in Data-Driven Agent: {e}")
             return {
-                'picks': ['error'],
+                'match_id': match['id'],
+                'homeTeam': match['homeTeam'],
+                'awayTeam': match['awayTeam'],
+                'sport': match['sport'],
+                'picks': [],
                 'confidence': 0.0,
-                'analysis': f'Analysis error: {str(e)}',
+                'data_sources': [],
+                'analysis': f'Error: {str(e)}',
                 'key_factors': [],
                 'statistics': {}
             }
 
-    def _extract_picks(self, analysis_text: str) -> List[str]:
+    def _extract_text(self, response) -> str:
+        """Extract text from ADK response"""
+        if hasattr(response, 'content'):
+            return response.content
+        elif hasattr(response, 'text'):
+            return response.text
+        else:
+            return str(response)
+
+    def _parse_response(self, text: str) -> Dict:
+        """Parse JSON from agent response"""
+        try:
+            # Try to find JSON in the response
+            import re
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
+            if json_match:
+                return json.loads(json_match.group())
+        except Exception as e:
+            logger.debug(f"Could not parse JSON: {e}")
+
+        # Fallback: extract information manually
+        return {
+            'picks': self._extract_picks(text),
+            'confidence': self._extract_confidence(text),
+            'key_factors': self._extract_key_factors(text),
+            'analysis': text[:800],
+            'statistics': self._extract_statistics(text)
+        }
+
+    def _extract_picks(self, text: str) -> List[str]:
         """Extract prediction picks from analysis text"""
         picks = []
-        text_lower = analysis_text.lower()
+        text_lower = text.lower()
 
         # Look for explicit predictions
-        if 'prediction' in text_lower or 'recommend' in text_lower:
-            if 'home' in text_lower and ('win' in text_lower or 'victory' in text_lower):
-                picks.append('home_win')
-            if 'away' in text_lower and ('win' in text_lower or 'victory' in text_lower):
-                picks.append('away_win')
-            if 'draw' in text_lower:
-                picks.append('draw')
-            if 'over' in text_lower and 'goals' in text_lower:
-                picks.append('over')
-            if 'under' in text_lower and 'goals' in text_lower:
-                picks.append('under')
-            if 'both teams to score' in text_lower or 'btts' in text_lower:
-                picks.append('btts')
+        if 'home' in text_lower and ('win' in text_lower or 'victory' in text_lower):
+            picks.append('home_win')
+        if 'away' in text_lower and ('win' in text_lower or 'victory' in text_lower):
+            picks.append('away_win')
+        if 'draw' in text_lower:
+            picks.append('draw')
+        if 'over' in text_lower and 'goals' in text_lower:
+            picks.append('over')
+        if 'under' in text_lower and 'goals' in text_lower:
+            picks.append('under')
+        if 'both teams to score' in text_lower or 'btts' in text_lower:
+            picks.append('btts')
 
         return picks if picks else ['no_clear_pick']
 
-    def _extract_confidence(self, analysis_text: str) -> float:
+    def _extract_confidence(self, text: str) -> float:
         """Extract confidence level from analysis"""
-        text_lower = analysis_text.lower()
+        import re
+        text_lower = text.lower()
 
+        # Try to find numerical confidence
+        confidence_match = re.search(r'confidence[:\s]+([0-9.]+)', text_lower)
+        if confidence_match:
+            try:
+                val = float(confidence_match.group(1))
+                return min(max(val, 0.0), 1.0)
+            except:
+                pass
+
+        # Qualitative confidence
         if 'high confidence' in text_lower or 'very confident' in text_lower:
             return 0.8
         elif 'moderate confidence' in text_lower or 'reasonably confident' in text_lower:
             return 0.6
         elif 'low confidence' in text_lower or 'uncertain' in text_lower:
             return 0.3
-        else:
-            # Try to find numerical confidence
-            import re
-            confidence_match = re.search(r'confidence[:\s]+([0-9.]+)', text_lower)
-            if confidence_match:
-                try:
-                    return float(confidence_match.group(1))
-                except:
-                    pass
 
         return 0.5  # Default
 
-    def _extract_key_factors(self, analysis_text: str) -> List[str]:
+    def _extract_key_factors(self, text: str) -> List[str]:
         """Extract key factors from analysis"""
         factors = []
-        lines = analysis_text.split('\n')
+        lines = text.split('\n')
 
         for line in lines:
             line_lower = line.lower()
@@ -230,27 +253,27 @@ Format your prediction as one of: home_win, away_win, draw, over, under, or btts
 
         # Default factors if none found
         if not factors:
-            if 'home advantage' in analysis_text.lower():
+            if 'home advantage' in text.lower():
                 factors.append('Home advantage')
-            if 'injury' in analysis_text.lower() or 'injuries' in analysis_text.lower():
+            if 'injury' in text.lower() or 'injuries' in text.lower():
                 factors.append('Injury concerns')
-            if 'form' in analysis_text.lower():
+            if 'form' in text.lower():
                 factors.append('Recent form')
 
         return factors[:5]
 
-    def _extract_statistics(self, analysis_text: str) -> Dict:
+    def _extract_statistics(self, text: str) -> Dict:
         """Extract statistics from analysis"""
         stats = {}
 
         # Look for common statistics
-        if 'head to head' in analysis_text.lower() or 'h2h' in analysis_text.lower():
+        if 'head to head' in text.lower() or 'h2h' in text.lower():
             stats['head_to_head'] = 'Mentioned in analysis'
 
-        if 'recent form' in analysis_text.lower():
+        if 'recent form' in text.lower():
             stats['recent_form'] = 'Analyzed'
 
-        if 'goals' in analysis_text.lower():
+        if 'goals' in text.lower():
             stats['goals_data'] = 'Available'
 
         return stats
