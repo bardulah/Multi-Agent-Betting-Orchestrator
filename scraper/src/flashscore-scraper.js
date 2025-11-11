@@ -278,7 +278,7 @@ class FlashscoreScraper {
           sportMatches = await this.scrapeBasketball();
           break;
         case 'tennis':
-          sportMatches = await scrapeTennis();
+          sportMatches = await this.scrapeTennis();
           break;
         case 'hockey':
           sportMatches = await this.scrapeHockey();
