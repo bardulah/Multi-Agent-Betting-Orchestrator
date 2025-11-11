@@ -7,7 +7,10 @@ import json
 import asyncio
 from typing import Dict, List
 from google.adk.agents import LlmAgent
+from google.adk import Runner
+from google.adk.sessions import InMemorySessionService
 from google.adk.tools import google_search
+from google.genai import types
 from .utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -59,7 +62,7 @@ Important Rules:
 
     agent = LlmAgent(
         name="internet_picks_agent",
-        model="gemini-2.0-flash-exp",
+        model="gemini-1.5-flash",
         instruction=instruction,
         tools=[google_search],
         description="Searches internet for betting tips and expert predictions",
@@ -76,6 +79,14 @@ class InternetPicksAgent:
     def __init__(self, config: Dict):
         self.config = config
         self.agent = create_internet_picks_agent(config)
+        self.session_service = InMemorySessionService()
+        self.runner = Runner(
+            app_name='betting_system',
+            agent=self.agent,
+            session_service=self.session_service
+        )
+        self.user_id = 'betting_user'
+        self.session_id = 'internet_picks_session'
         logger.info("Internet Picks Agent (ADK) initialized")
 
     def analyze_match(self, match: Dict) -> Dict:
@@ -121,14 +132,34 @@ Search for betting tips and predictions for this specific match. Provide your an
 """
 
         try:
-            # Run the ADK agent - it returns an async generator of events
+            # Create or get session
+            session = await self.session_service.create_session(
+                app_name='betting_system',
+                user_id=self.user_id,
+                session_id=self.session_id
+            )
+
+            # Create proper ADK message
+            message = types.Content(
+                parts=[types.Part(text=prompt)],
+                role='user'
+            )
+
+            # Run the ADK agent via Runner
             result_text = ""
-            async for event in self.agent.run_async(prompt):
-                # Collect text from events
+            async for event in self.runner.run_async(
+                user_id=self.user_id,
+                session_id=self.session_id,
+                new_message=message
+            ):
+                # Extract text from event content
                 if hasattr(event, 'content') and event.content:
-                    result_text += str(event.content)
-                elif hasattr(event, 'text') and event.text:
-                    result_text += str(event.text)
+                    if hasattr(event.content, 'parts'):
+                        for part in event.content.parts:
+                            if hasattr(part, 'text') and part.text:
+                                result_text += part.text
+                    else:
+                        result_text += str(event.content)
 
             if not result_text:
                 result_text = "No response from agent"
