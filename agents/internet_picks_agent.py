@@ -62,7 +62,7 @@ Important Rules:
 
     agent = LlmAgent(
         name="internet_picks_agent",
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         instruction=instruction,
         tools=[google_search],
         description="Searches internet for betting tips and expert predictions",

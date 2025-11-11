@@ -73,7 +73,7 @@ Important Rules:
 
     agent = LlmAgent(
         name="synthesis_agent",
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         instruction=instruction,
         description="Synthesizes multiple analyses and makes final betting decisions",
     )

@@ -68,7 +68,7 @@ Important Rules:
 
     agent = LlmAgent(
         name="data_driven_agent",
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         instruction=instruction,
         tools=[google_search],
         description="Analyzes matches using statistical and objective data",
