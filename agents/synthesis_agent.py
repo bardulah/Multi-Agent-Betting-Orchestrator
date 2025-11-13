@@ -5,11 +5,14 @@ Combines inputs from Internet Picks and Data-Driven agents to make final betting
 
 import json
 import asyncio
+import uuid
+import os
 from typing import Dict, List, Optional
 from google.adk.agents import LlmAgent
 from google.adk import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
+from dotenv import load_dotenv
 from .utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -76,6 +79,8 @@ Important Rules:
         model="gemini-2.5-flash",
         instruction=instruction,
         description="Synthesizes multiple analyses and makes final betting decisions",
+        # ADK State Management: Auto-save output to session state
+        output_key="final_recommendation",
     )
 
     return agent
@@ -98,7 +103,9 @@ class SynthesisAgent:
             session_service=self.session_service
         )
         self.user_id = 'betting_user'
-        self.session_id = 'synthesis_session'
+        # FIX #2: Generate unique session ID per match instead of hardcoded
+        # This prevents "Session already exists" errors on subsequent matches
+        self.session_id_prefix = 'synthesis'
         logger.info("Synthesis Agent (ADK) initialized")
 
     def synthesize(
@@ -119,32 +126,47 @@ class SynthesisAgent:
             Final betting recommendation
         """
         # Run async method in event loop
+        # Always create a new event loop to avoid conflicts
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        return loop.run_until_complete(self.synthesize_async(match, internet_picks, data_driven))
+            return loop.run_until_complete(self.synthesize_async(match, internet_picks, data_driven))
+        finally:
+            loop.close()
 
     async def synthesize_async(
         self,
         match: Dict,
-        internet_picks: Dict,
-        data_driven: Dict
+        internet_picks: Dict = None,
+        data_driven: Dict = None,
+        session=None
     ) -> Dict:
         """
         Synthesize analyses and make final betting decision (async)
 
         Args:
             match: Original match data with odds
-            internet_picks: Analysis from Internet Picks Agent
-            data_driven: Analysis from Data-Driven Agent
+            internet_picks: Analysis from Internet Picks Agent (or access from session.state)
+            data_driven: Analysis from Data-Driven Agent (or access from session.state)
+            session: ADK session for state access (optional)
 
         Returns:
             Final betting recommendation
         """
         logger.info(f"Synthesis: Analyzing {match['homeTeam']} vs {match['awayTeam']}")
+
+        # Try to get analyses from session state if not provided
+        if session and not internet_picks:
+            internet_picks = session.state.get("internet_picks_analysis", {})
+            logger.debug("Loaded internet_picks_analysis from session state")
+        
+        if session and not data_driven:
+            data_driven = session.state.get("data_driven_analysis", {})
+            logger.debug("Loaded data_driven_analysis from session state")
+        
+        # Fallback to empty dicts if still missing
+        internet_picks = internet_picks or {}
+        data_driven = data_driven or {}
 
         # Prepare odds information
         odds_text = self._format_odds(match.get('odds', {}))
@@ -175,11 +197,16 @@ Provide your final decision in JSON format.
 """
 
         try:
+            # FIX #2: Generate unique session ID per match
+            # This prevents "Session already exists" errors
+            unique_session_id = f"{self.session_id_prefix}_{match.get('id', 'unknown')}_{uuid.uuid4().hex[:8]}"
+            logger.debug(f"Creating session: {unique_session_id} for {match['homeTeam']} vs {match['awayTeam']}")
+
             # Create or get session
             session = await self.session_service.create_session(
                 app_name='betting_system',
                 user_id=self.user_id,
-                session_id=self.session_id
+                session_id=unique_session_id
             )
 
             # Create proper ADK message
@@ -192,7 +219,7 @@ Provide your final decision in JSON format.
             result_text = ""
             async for event in self.runner.run_async(
                 user_id=self.user_id,
-                session_id=self.session_id,
+                session_id=unique_session_id,
                 new_message=message
             ):
                 # Extract text from event content
