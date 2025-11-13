@@ -13,10 +13,13 @@ from typing import Dict, List
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+from google.adk.sessions import InMemorySessionService
+
 from .internet_picks_agent import InternetPicksAgent
 from .data_driven_agent import DataDrivenAgent
 from .synthesis_agent import SynthesisAgent
 from .notification_agent import NotificationAgent
+from .betting_orchestrator_agent import BettingOrchestratorAgent
 from .utils.logging_config import setup_logging, get_logger
 
 
@@ -30,13 +33,32 @@ class BettingSystemOrchestrator:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
 
-        # Load environment variables
-        from dotenv import load_dotenv
-        load_dotenv('config/.env')
-
-        # Setup logging
+        # Setup logging first
         setup_logging(self.config)
         self.logger = get_logger(__name__)
+
+        # Load environment variables
+        from dotenv import load_dotenv
+        env_loaded = load_dotenv('config/.env')
+        self.logger.info(f"Environment variables loaded: {env_loaded}")
+        
+        # Verify critical environment variables
+        google_api_key = os.getenv('GOOGLE_API_KEY')
+        if google_api_key:
+            self.logger.info(f"✓ GOOGLE_API_KEY loaded ({len(google_api_key)} chars)")
+        else:
+            self.logger.error("✗ GOOGLE_API_KEY not found after loading .env")
+
+        # Validate API key (already verified above)
+        google_api_key = os.getenv('GOOGLE_API_KEY')
+        if not google_api_key:
+            self.logger.error("GOOGLE_API_KEY not found in environment variables!")
+            self.logger.error("Please set GOOGLE_API_KEY in config/.env file")
+            raise ValueError("Missing GOOGLE_API_KEY - required for ADK agents")
+
+        # Create necessary directories
+        Path('data').mkdir(exist_ok=True)
+        Path('logs').mkdir(exist_ok=True)
 
         # Initialize agents
         self.logger.info("Initializing agents...")
@@ -44,6 +66,7 @@ class BettingSystemOrchestrator:
         self.data_driven_agent = DataDrivenAgent(self.config)
         self.synthesis_agent = SynthesisAgent(self.config)
         self.notification_agent = NotificationAgent(self.config)
+        self.orchestrator_agent = BettingOrchestratorAgent(self.config)
 
         self.logger.info("All agents initialized successfully")
 
@@ -134,6 +157,28 @@ class BettingSystemOrchestrator:
             'internet_picks': internet_result,
             'data_driven': data_driven_result
         }
+
+    async def process_all_matches_with_adk_orchestrator(self, matches: List[Dict]) -> List[Dict]:
+        """
+        Alternative orchestration using BettingOrchestratorAgent
+        
+        This is an async wrapper that demonstrates using the custom ADK orchestrator agent.
+        Currently uses the same underlying ThreadPoolExecutor implementation but with ADK patterns.
+        
+        Future: This can be upgraded to use full ADK orchestration with event tracing
+        by properly initializing the BettingOrchestratorAgent through the Runner.
+
+        Args:
+            matches: List of match dictionaries
+
+        Returns:
+            List of recommendations
+        """
+        self.logger.info(f"Processing {len(matches)} matches with ADK-compatible orchestration...")
+        
+        # For now, use the existing ThreadPoolExecutor approach
+        # The BettingOrchestratorAgent is ready in self.orchestrator_agent for future use
+        return self.process_all_matches(matches)
 
     def process_all_matches(self, matches: List[Dict]) -> List[Dict]:
         """

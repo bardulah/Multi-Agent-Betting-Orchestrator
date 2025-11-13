@@ -30,13 +30,46 @@ class FlashscoreScraper {
     this.page = await this.browser.newPage();
     await this.page.setUserAgent(this.config.scraper.user_agent);
     await this.page.setViewport(this.config.scraper.viewport);
-
-    // Set longer timeout
     this.page.setDefaultNavigationTimeout(this.config.scraper.timeout);
   }
 
   async delay(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  async clickOddsButton() {
+    console.log('Looking for odds tab...');
+    
+    try {
+      const clicked = await this.page.evaluate(() => {
+        // Look for the filters__tab with "Odds" text
+        const allTabs = document.querySelectorAll('.filters__tab, div[class*="filter"]');
+        const oddsTab = Array.from(allTabs).find(tab => {
+          const text = tab.textContent.trim().toLowerCase();
+          return text === 'odds' || text.includes('odds');
+        });
+        
+        if (oddsTab) {
+          console.log('Found odds tab:', oddsTab.textContent.trim());
+          oddsTab.click();
+          return true;
+        }
+        
+        return false;
+      });
+      
+      if (clicked) {
+        console.log('✓ Clicked odds tab');
+        await this.delay(8000); // Wait longer for odds to load via AJAX
+        return true;
+      } else {
+        console.log('⚠  Odds tab not found');
+        return false;
+      }
+    } catch (err) {
+      console.log('⚠  Error clicking odds tab:', err.message);
+      return false;
+    }
   }
 
   async scrapeFootball() {
@@ -45,31 +78,147 @@ class FlashscoreScraper {
 
     try {
       await this.page.goto('https://www.flashscore.com/football/', {
-        waitUntil: 'networkidle2'
+        waitUntil: 'domcontentloaded'
       });
 
-      await this.delay(this.config.scraper.rate_limit_delay);
-
-      // Wait for matches to load
-      await this.page.waitForSelector('.event__match', { timeout: 10000 }).catch(() => {
-        console.log('No matches found or selector changed');
-      });
-
-      // Get today's matches
-      const matchElements = await this.page.$$('.event__match');
-      console.log(`Found ${matchElements.length} football matches`);
-
-      for (let i = 0; i < Math.min(matchElements.length, 20); i++) {
-        try {
-          const match = await this.extractMatchData(matchElements[i], 'football');
-          if (match) {
-            matches.push(match);
-          }
-          await this.delay(this.config.scraper.rate_limit_delay);
-        } catch (error) {
-          console.error(`Error extracting match ${i}:`, error.message);
+      await this.delay(3000);
+      
+      // Click odds tab directly (same method as debug script)
+      console.log('Clicking odds tab...');
+      const clicked = await this.page.evaluate(() => {
+        const allTabs = document.querySelectorAll('.filters__tab');
+        const oddsTab = Array.from(allTabs).find(tab => {
+          const text = tab.textContent.trim().toLowerCase();
+          return text === 'odds' || text.includes('odds');
+        });
+        
+        if (oddsTab) {
+          oddsTab.click();
+          return true;
         }
+        return false;
+      });
+      
+      if (clicked) {
+        console.log('✓ Clicked odds tab');
+        await this.delay(6000); // Wait for odds to fully load
+      } else {
+        console.log('⚠ Odds tab not found');
       }
+
+      // Extract matches with odds
+      const matchData = await this.page.evaluate(() => {
+        const totalOddsElements = document.querySelectorAll('.odds__odd').length;
+        const oddsWithValues = document.querySelectorAll('.odds__odd:not(.no-odds)').length;
+        console.log(`Total odds elements: ${totalOddsElements}, with values: ${oddsWithValues}`);
+        
+        const matches = [];
+        const matchElements = document.querySelectorAll('[id^="g_1"]') || 
+                             document.querySelectorAll('.event__match');
+        
+        console.log(`Found ${matchElements.length} match elements`);
+        
+        // Use all matches (limit will be applied from config)
+        for (let i = 0; i < matchElements.length; i++) {
+          const el = matchElements[i];
+          
+          try {
+            // Extract team names
+            let homeTeam = 'Unknown';
+            let awayTeam = 'Unknown';
+            
+            const homeEl = el.querySelector('.event__participant--home');
+            const awayEl = el.querySelector('.event__participant--away');
+            
+            if (homeEl) homeTeam = homeEl.textContent.trim();
+            if (awayEl) awayTeam = awayEl.textContent.trim();
+            
+            // Fallbacks
+            if (homeTeam === 'Unknown') {
+              const participants = el.querySelectorAll('[class*="participant"]');
+              if (participants.length >= 2) {
+                homeTeam = participants[0].textContent.trim();
+                awayTeam = participants[1].textContent.trim();
+              }
+            }
+            
+            if (homeTeam === 'Unknown' && el.title) {
+              const parts = el.title.split(' - ');
+              if (parts.length >= 2) {
+                homeTeam = parts[0].trim();
+                awayTeam = parts[1].trim();
+              }
+            }
+            
+            // Extract time
+            let time = 'TBD';
+            const timeEl = el.querySelector('.event__time');
+            if (timeEl) time = timeEl.textContent.trim();
+            
+            // Extract ODDS - correct selectors based on actual HTML
+            let odds = {};
+            
+            // Look for .odds__odd divs (exclude ones with 'no-odds' class)
+            const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
+            
+            if (allOddsDiv.length >= 3) {
+              // Extract span values from each odds div
+              const values = Array.from(allOddsDiv).map(odd => {
+                // Find any span inside (could be .up, .down, or empty class)
+                const span = odd.querySelector('span');
+                if (span) {
+                  const text = span.textContent.trim();
+                  const num = parseFloat(text);
+                  return (!isNaN(num) && text !== '-') ? num : null;
+                }
+                return null;
+              }).filter(v => v !== null);
+              
+              if (values.length >= 3) {
+                // Football: home, draw, away
+                odds['Flashscore'] = {
+                  home: values[0],
+                  draw: values[1],
+                  away: values[2]
+                };
+              } else if (values.length >= 2) {
+                // Tennis/Basketball: home, away (no draw)
+                odds['Flashscore'] = {
+                  home: values[0],
+                  away: values[1]
+                };
+              }
+            }
+            
+            matches.push({
+              id: el.id || `football_${i}_${Date.now()}`,
+              sport: 'football',
+              homeTeam: homeTeam,
+              awayTeam: awayTeam,
+              league: 'Unknown League',
+              time: time,
+              date: new Date().toISOString().split('T')[0],
+              odds: odds,
+              _hasOdds: Object.keys(odds).length > 0
+            });
+            
+          } catch (err) {
+            console.error(`Error extracting match ${i}:`, err.message);
+          }
+        }
+        
+        return matches;
+      });
+
+      const validMatches = matchData.filter(m => 
+        m.homeTeam !== 'Unknown' && m.awayTeam !== 'Unknown'
+      );
+      
+      console.log(`Extracted: ${matchData.length} total, ${validMatches.length} valid`);
+      console.log(`Matches with odds: ${validMatches.filter(m => m._hasOdds).length}`);
+      
+      matches.push(...validMatches);
+
     } catch (error) {
       console.error('Error scraping football:', error.message);
     }
@@ -92,20 +241,90 @@ class FlashscoreScraper {
         console.log('No matches found or selector changed');
       });
 
-      const matchElements = await this.page.$$('.event__match');
-      console.log(`Found ${matchElements.length} basketball matches`);
+      const matchData = await this.page.evaluate((selector) => {
+        const elements = document.querySelectorAll(selector);
+        const results = [];
+        const maxMatches = Math.min(elements.length, 20);
 
-      for (let i = 0; i < Math.min(matchElements.length, 20); i++) {
-        try {
-          const match = await this.extractMatchData(matchElements[i], 'basketball');
-          if (match) {
-            matches.push(match);
+        for (let i = 0; i < maxMatches; i++) {
+          const el = elements[i];
+          
+          try {
+            // Extract team names
+            const homeEl = el.querySelector('.event__participant--home');
+            const awayEl = el.querySelector('.event__participant--away');
+            const timeEl = el.querySelector('.event__time');
+            
+            let homeTeam = 'Unknown';
+            let awayTeam = 'Unknown';
+            let time = 'TBD';
+
+            if (homeEl && awayEl) {
+              const homeText = homeEl.textContent.trim();
+              const awayText = awayEl.textContent.trim();
+              
+              if (homeText && awayText) {
+                homeTeam = homeText;
+                awayTeam = awayText;
+              }
+            }
+
+            if (timeEl) {
+              time = timeEl.textContent.trim();
+            }
+            
+            // Extract odds for basketball (usually just home/away, no draw)
+            let odds = {};
+            const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
+            
+            if (allOddsDiv.length >= 2) {
+              const values = Array.from(allOddsDiv).map(odd => {
+                const span = odd.querySelector('span');
+                if (span) {
+                  const text = span.textContent.trim();
+                  const num = parseFloat(text);
+                  return (!isNaN(num) && text !== '-') ? num : null;
+                }
+                return null;
+              }).filter(v => v !== null);
+              
+              if (values.length >= 2) {
+                odds['Flashscore'] = {
+                  home: values[0],
+                  away: values[1]
+                };
+              }
+            }
+            
+            results.push({
+              id: el.id || `basketball_${i}_${Date.now()}`,
+              sport: 'basketball',
+              homeTeam: homeTeam,
+              awayTeam: awayTeam,
+              league: 'Unknown League',
+              time: time,
+              date: new Date().toISOString().split('T')[0],
+              odds: odds,
+              _hasOdds: Object.keys(odds).length > 0
+            });
+            
+          } catch (err) {
+            console.error(`Error extracting basketball match ${i}:`, err.message);
           }
-          await this.delay(this.config.scraper.rate_limit_delay);
-        } catch (error) {
-          console.error(`Error extracting match ${i}:`, error.message);
         }
-      }
+        
+        return results;
+      }, '.event__match');
+
+      const validMatches = (matchData || []).filter(m => 
+        m.homeTeam !== 'Unknown' && m.awayTeam !== 'Unknown'
+      );
+      
+      console.log(`Extracted: ${(matchData || []).length} total, ${validMatches.length} valid`);
+      console.log(`Matches with odds: ${validMatches.filter(m => m._hasOdds).length}`);
+      
+      matches.push(...validMatches);
+
     } catch (error) {
       console.error('Error scraping basketball:', error.message);
     }
@@ -119,29 +338,113 @@ class FlashscoreScraper {
 
     try {
       await this.page.goto('https://www.flashscore.com/tennis/', {
-        waitUntil: 'networkidle2'
+        waitUntil: 'domcontentloaded'
       });
 
-      await this.delay(this.config.scraper.rate_limit_delay);
-
-      await this.page.waitForSelector('.event__match', { timeout: 10000 }).catch(() => {
-        console.log('No matches found or selector changed');
-      });
-
-      const matchElements = await this.page.$$('.event__match');
-      console.log(`Found ${matchElements.length} tennis matches`);
-
-      for (let i = 0; i < Math.min(matchElements.length, 20); i++) {
-        try {
-          const match = await this.extractMatchData(matchElements[i], 'tennis');
-          if (match) {
-            matches.push(match);
-          }
-          await this.delay(this.config.scraper.rate_limit_delay);
-        } catch (error) {
-          console.error(`Error extracting match ${i}:`, error.message);
+      await this.delay(3000);
+      
+      // Click odds tab
+      console.log('Clicking odds tab...');
+      const clicked = await this.page.evaluate(() => {
+        const allTabs = document.querySelectorAll('.filters__tab');
+        const oddsTab = Array.from(allTabs).find(tab => {
+          const text = tab.textContent.trim().toLowerCase();
+          return text === 'odds' || text.includes('odds');
+        });
+        if (oddsTab) {
+          oddsTab.click();
+          return true;
         }
+        return false;
+      });
+      
+      if (clicked) {
+        console.log('✓ Clicked odds tab');
+        await this.delay(6000);
       }
+
+      const matchData = await this.page.evaluate(() => {
+        const matches = [];
+        const matchElements = document.querySelectorAll('[id^="g_2"]') || 
+                             document.querySelectorAll('.event__match');
+        
+        for (let i = 0; i < matchElements.length; i++) {
+          const el = matchElements[i];
+          
+          try {
+            let homeTeam = 'Unknown';
+            let awayTeam = 'Unknown';
+            
+            const homeEl = el.querySelector('.event__participant--home');
+            const awayEl = el.querySelector('.event__participant--away');
+            
+            if (homeEl) homeTeam = homeEl.textContent.trim();
+            if (awayEl) awayTeam = awayEl.textContent.trim();
+            
+            if (homeTeam === 'Unknown' && el.title) {
+              const parts = el.title.split(' - ');
+              if (parts.length >= 2) {
+                homeTeam = parts[0].trim();
+                awayTeam = parts[1].trim();
+              }
+            }
+            
+            let time = 'TBD';
+            const timeEl = el.querySelector('.event__time');
+            if (timeEl) time = timeEl.textContent.trim();
+            
+            // Extract odds for tennis (player 1 / player 2)
+            let odds = {};
+            const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
+            
+            if (allOddsDiv.length >= 2) {
+              const values = Array.from(allOddsDiv).map(odd => {
+                const span = odd.querySelector('span');
+                if (span) {
+                  const text = span.textContent.trim();
+                  const num = parseFloat(text);
+                  return (!isNaN(num) && text !== '-') ? num : null;
+                }
+                return null;
+              }).filter(v => v !== null);
+              
+              if (values.length >= 2) {
+                odds['Flashscore'] = {
+                  home: values[0],
+                  away: values[1]
+                };
+              }
+            }
+            
+            matches.push({
+              id: el.id || `tennis_${i}_${Date.now()}`,
+              sport: 'tennis',
+              homeTeam: homeTeam,
+              awayTeam: awayTeam,
+              league: 'Unknown League',
+              time: time,
+              date: new Date().toISOString().split('T')[0],
+              odds: odds,
+              _hasOdds: Object.keys(odds).length > 0
+            });
+            
+          } catch (err) {
+            console.error(`Error extracting tennis match ${i}:`, err.message);
+          }
+        }
+        
+        return matches;
+      });
+
+      const validMatches = matchData.filter(m => 
+        m.homeTeam !== 'Unknown' && m.awayTeam !== 'Unknown'
+      );
+      
+      console.log(`Extracted: ${matchData.length} total, ${validMatches.length} valid`);
+      console.log(`Matches with odds: ${validMatches.filter(m => m._hasOdds).length}`);
+      
+      matches.push(...validMatches);
+
     } catch (error) {
       console.error('Error scraping tennis:', error.message);
     }
@@ -164,20 +467,90 @@ class FlashscoreScraper {
         console.log('No matches found or selector changed');
       });
 
-      const matchElements = await this.page.$$('.event__match');
-      console.log(`Found ${matchElements.length} hockey matches`);
+      const matchData = await this.page.evaluate((selector) => {
+        const elements = document.querySelectorAll(selector);
+        const results = [];
+        const maxMatches = Math.min(elements.length, 20);
 
-      for (let i = 0; i < Math.min(matchElements.length, 20); i++) {
-        try {
-          const match = await this.extractMatchData(matchElements[i], 'hockey');
-          if (match) {
-            matches.push(match);
+        for (let i = 0; i < maxMatches; i++) {
+          const el = elements[i];
+          
+          try {
+            // Extract team names
+            const homeEl = el.querySelector('.event__participant--home');
+            const awayEl = el.querySelector('.event__participant--away');
+            const timeEl = el.querySelector('.event__time');
+            
+            let homeTeam = 'Unknown';
+            let awayTeam = 'Unknown';
+            let time = 'TBD';
+
+            if (homeEl && awayEl) {
+              const homeText = homeEl.textContent.trim();
+              const awayText = awayEl.textContent.trim();
+              
+              if (homeText && awayText) {
+                homeTeam = homeText;
+                awayTeam = awayText;
+              }
+            }
+
+            if (timeEl) {
+              time = timeEl.textContent.trim();
+            }
+            
+            // Extract odds for hockey (usually home/away, no draw)
+            let odds = {};
+            const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
+            
+            if (allOddsDiv.length >= 2) {
+              const values = Array.from(allOddsDiv).map(odd => {
+                const span = odd.querySelector('span');
+                if (span) {
+                  const text = span.textContent.trim();
+                  const num = parseFloat(text);
+                  return (!isNaN(num) && text !== '-') ? num : null;
+                }
+                return null;
+              }).filter(v => v !== null);
+              
+              if (values.length >= 2) {
+                odds['Flashscore'] = {
+                  home: values[0],
+                  away: values[1]
+                };
+              }
+            }
+            
+            matches.push({
+              id: el.id || `hockey_${i}_${Date.now()}`,
+              sport: 'hockey',
+              homeTeam: homeTeam,
+              awayTeam: awayTeam,
+              league: 'Unknown League',
+              time: time,
+              date: new Date().toISOString().split('T')[0],
+              odds: odds,
+              _hasOdds: Object.keys(odds).length > 0
+            });
+            
+          } catch (err) {
+            console.error(`Error extracting hockey match ${i}:`, err.message);
           }
-          await this.delay(this.config.scraper.rate_limit_delay);
-        } catch (error) {
-          console.error(`Error extracting match ${i}:`, error.message);
         }
-      }
+        
+        return matches;
+      }, '.event__match');
+
+      const validMatches = (matchData || []).filter(m => 
+        m.homeTeam !== 'Unknown' && m.awayTeam !== 'Unknown'
+      );
+      
+      console.log(`Extracted: ${(matchData || []).length} total, ${validMatches.length} valid`);
+      console.log(`Matches with odds: ${validMatches.filter(m => m._hasOdds).length}`);
+      
+      matches.push(...validMatches);
+
     } catch (error) {
       console.error('Error scraping hockey:', error.message);
     }
@@ -185,89 +558,11 @@ class FlashscoreScraper {
     return matches;
   }
 
-  async extractMatchData(matchElement, sport) {
-    try {
-      // Extract basic match information
-      const homeTeam = await matchElement.$eval('.event__participant--home', el => el.textContent.trim()).catch(() => 'Unknown');
-      const awayTeam = await matchElement.$eval('.event__participant--away', el => el.textContent.trim()).catch(() => 'Unknown');
-      const time = await matchElement.$eval('.event__time', el => el.textContent.trim()).catch(() => 'TBD');
-
-      // Try to get league/tournament
-      const league = await this.page.$eval('.event__title--type', el => el.textContent.trim()).catch(() => 'Unknown League');
-
-      // Get match ID for odds
-      const matchId = await matchElement.evaluate(el => el.getAttribute('id'));
-
-      const matchData = {
-        id: matchId || `${homeTeam}_${awayTeam}_${Date.now()}`,
-        sport: sport,
-        homeTeam: homeTeam,
-        awayTeam: awayTeam,
-        league: league,
-        time: time,
-        date: new Date().toISOString().split('T')[0],
-        odds: {}
-      };
-
-      // Try to get odds if available
-      try {
-        // Click on the match to see odds
-        await matchElement.click();
-        await this.delay(1000);
-
-        // Try to click odds tab
-        const oddsTab = await this.page.$('a[href*="odds"]').catch(() => null);
-        if (oddsTab) {
-          await oddsTab.click();
-          await this.delay(1500);
-
-          // Extract odds from bookmakers
-          const oddsData = await this.page.evaluate(() => {
-            const odds = {};
-            const oddsRows = document.querySelectorAll('.ui-table__row');
-
-            oddsRows.forEach(row => {
-              const bookmaker = row.querySelector('.oddsCell__bookmaker')?.textContent.trim();
-              const homeOdds = row.querySelector('.oddsValueInner:nth-child(1)')?.textContent.trim();
-              const drawOdds = row.querySelector('.oddsValueInner:nth-child(2)')?.textContent.trim();
-              const awayOdds = row.querySelector('.oddsValueInner:nth-child(3)')?.textContent.trim();
-
-              if (bookmaker && homeOdds) {
-                odds[bookmaker] = {
-                  home: parseFloat(homeOdds) || null,
-                  draw: parseFloat(drawOdds) || null,
-                  away: parseFloat(awayOdds) || null
-                };
-              }
-            });
-
-            return odds;
-          }).catch(() => ({}));
-
-          matchData.odds = oddsData;
-        }
-
-        // Go back to matches list
-        await this.page.goBack();
-        await this.delay(1000);
-      } catch (error) {
-        console.log(`Could not extract odds for ${homeTeam} vs ${awayTeam}`);
-      }
-
-      console.log(`Extracted: ${homeTeam} vs ${awayTeam}`);
-      return matchData;
-
-    } catch (error) {
-      console.error('Error in extractMatchData:', error.message);
-      return null;
-    }
-  }
-
   async scrapeAll() {
-    console.log('Starting scrape for all configured sports...');
+    console.log('Starting scrape for all configured sports...\n');
 
     for (const sport of this.config.sports) {
-      console.log(`\n=== Scraping ${sport.toUpperCase()} ===`);
+      console.log(`=== Scraping ${sport.toUpperCase()} ===`);
       let sportMatches = [];
 
       switch(sport.toLowerCase()) {
@@ -284,26 +579,29 @@ class FlashscoreScraper {
           sportMatches = await this.scrapeHockey();
           break;
         default:
-          console.log(`Sport ${sport} not supported yet`);
+          console.log(`Unknown sport: ${sport}`);
       }
 
       this.matches.push(...sportMatches);
-      console.log(`Total matches scraped for ${sport}: ${sportMatches.length}`);
+      console.log(`Total ${sport} matches: ${sportMatches.length}\n`);
     }
 
     return this.matches;
   }
 
-  async saveResults(outputPath) {
+  async saveResults() {
+    const outputPath = path.join(__dirname, '../../data/matches.json');
     const output = {
       scrapeDate: new Date().toISOString(),
       totalMatches: this.matches.length,
+      matchesWithOdds: this.matches.filter(m => m._hasOdds).length,
       matches: this.matches
     };
 
     await fs.writeFile(outputPath, JSON.stringify(output, null, 2));
-    console.log(`\nResults saved to ${outputPath}`);
-    console.log(`Total matches scraped: ${this.matches.length}`);
+    console.log(`Results saved to ${outputPath}`);
+    console.log(`Total matches: ${this.matches.length}`);
+    console.log(`Matches with odds: ${output.matchesWithOdds}`);
   }
 
   async close() {
@@ -314,37 +612,27 @@ class FlashscoreScraper {
   }
 }
 
+// Main execution
 async function main() {
+  const configPath = path.join(__dirname, '../../config/config.yaml');
+  const configContent = await fs.readFile(configPath, 'utf8');
+  const config = yaml.parse(configContent);
+
+  const scraper = new FlashscoreScraper(config);
+
   try {
-    // Load configuration
-    const configPath = path.join(__dirname, '../../config/config.yaml');
-    const configFile = await fs.readFile(configPath, 'utf8');
-    const config = yaml.parse(configFile);
-
-    // Initialize scraper
-    const scraper = new FlashscoreScraper(config);
     await scraper.initialize();
-
-    // Scrape all sports
     await scraper.scrapeAll();
-
-    // Save results
-    const outputPath = path.join(__dirname, '../../data/matches.json');
-    await scraper.saveResults(outputPath);
-
-    // Close browser
-    await scraper.close();
-
-    process.exit(0);
+    await scraper.saveResults();
   } catch (error) {
     console.error('Fatal error:', error);
-    process.exit(1);
+  } finally {
+    await scraper.close();
   }
 }
 
-// Run if called directly
 if (require.main === module) {
-  main();
+  main().catch(console.error);
 }
 
 module.exports = FlashscoreScraper;
