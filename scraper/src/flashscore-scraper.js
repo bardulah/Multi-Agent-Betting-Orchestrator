@@ -37,6 +37,77 @@ class FlashscoreScraper {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
+  // League extraction function - used by all sports
+  // STRATEGY 2 (90% success rate): Look for section header by walking backwards
+  static extractLeague(matchElement) {
+    let league = 'Unknown League';
+
+    // Look at previous siblings to find the league header
+    let prev = matchElement.previousElementSibling;
+    for (let j = 0; j < 10; j++) {
+      if (!prev) break;
+
+      const prevText = prev.textContent.trim();
+
+      // Skip empty elements
+      if (prevText.length === 0) {
+        prev = prev.previousElementSibling;
+        continue;
+      }
+
+      // Look for typical league patterns (these are usually in headers)
+      const leaguePatterns = [
+        /([A-Z][A-Z\s]+):\s*([^0-9\n]+)/,  // "EUROPE: World Cup"
+        /(World Cup|Champions League|Premier League|La Liga|Serie A|Ligue|Bundesliga|Cup|Championship|League|Playoff|Qualification)/i
+      ];
+
+      for (const pattern of leaguePatterns) {
+        const match = prevText.match(pattern);
+        if (match) {
+          // Return the full matched string if reasonable length
+          if (prevText.length < 150) {  // Avoid matching match lists
+            league = prevText.substring(0, 100).trim();
+
+            // Clean up league name: remove odds labels like "1X2", "Over/Under"
+            // Keep only: "REGION: League Name - Type"
+            league = league
+              .replace(/\s*1X2\s*$/, '')  // Remove "1X2" at end
+              .replace(/\s*Over\/Under\s*$/, '')  // Remove "Over/Under"
+              .replace(/\s*Standings.*$/, '')  // Remove "Standings" and after
+              .replace(/\s*Scores.*$/, '')  // Remove "Scores" and after
+              .trim();
+
+            return league;
+          }
+        }
+      }
+
+      prev = prev.previousElementSibling;
+    }
+
+    // FALLBACK: Try to extract from breadcrumb/parent
+    const breadcrumb = matchElement.closest('[class*="breadcrumb"], [class*="path"], .event__round');
+    if (breadcrumb) {
+      const text = breadcrumb.textContent.trim();
+      if (text.length > 0 && text.length < 200) {
+        league = text.substring(0, 100).trim();
+        return league;
+      }
+    }
+
+    // FALLBACK: Check for league label element
+    const leagueLabel = matchElement.querySelector('[class*="tournament"], [class*="league"], [class*="category"]');
+    if (leagueLabel) {
+      const text = leagueLabel.textContent.trim();
+      if (text.length > 0 && text !== 'Preview' && text !== 'Live') {
+        league = text.substring(0, 100);
+        return league;
+      }
+    }
+
+    return league;
+  }
+
   async clickOddsButton() {
     console.log('Looking for odds tab...');
     
@@ -318,19 +389,44 @@ class FlashscoreScraper {
       });
 
       const matchData = await this.page.evaluate((selector) => {
+        // Helper to extract league (same logic as football)
+        function extractLeague(el) {
+          let league = 'Unknown League';
+          let prev = el.previousElementSibling;
+          for (let j = 0; j < 10; j++) {
+            if (!prev) break;
+            const text = prev.textContent.trim();
+            if (text.length === 0) {
+              prev = prev.previousElementSibling;
+              continue;
+            }
+            if (text.length < 150 && /[A-Z]:/.test(text)) {
+              league = text.substring(0, 100).trim()
+                .replace(/\s*1X2\s*$/, '')
+                .replace(/\s*Over\/Under\s*$/, '')
+                .replace(/\s*Standings.*$/, '')
+                .replace(/\s*Scores.*$/, '')
+                .trim();
+              return league;
+            }
+            prev = prev.previousElementSibling;
+          }
+          return league;
+        }
+
         const elements = document.querySelectorAll(selector);
         const results = [];
         const maxMatches = Math.min(elements.length, 20);
 
         for (let i = 0; i < maxMatches; i++) {
           const el = elements[i];
-          
+
           try {
             // Extract team names
             const homeEl = el.querySelector('.event__participant--home');
             const awayEl = el.querySelector('.event__participant--away');
             const timeEl = el.querySelector('.event__time');
-            
+
             let homeTeam = 'Unknown';
             let awayTeam = 'Unknown';
             let time = 'TBD';
@@ -338,7 +434,7 @@ class FlashscoreScraper {
             if (homeEl && awayEl) {
               const homeText = homeEl.textContent.trim();
               const awayText = awayEl.textContent.trim();
-              
+
               if (homeText && awayText) {
                 homeTeam = homeText;
                 awayTeam = awayText;
@@ -348,11 +444,11 @@ class FlashscoreScraper {
             if (timeEl) {
               time = timeEl.textContent.trim();
             }
-            
+
             // Extract odds for basketball (usually just home/away, no draw)
             let odds = {};
             const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
-            
+
             if (allOddsDiv.length >= 2) {
               const values = Array.from(allOddsDiv).map(odd => {
                 const span = odd.querySelector('span');
@@ -363,7 +459,7 @@ class FlashscoreScraper {
                 }
                 return null;
               }).filter(v => v !== null);
-              
+
               if (values.length >= 2) {
                 odds['Flashscore'] = {
                   home: values[0],
@@ -371,13 +467,16 @@ class FlashscoreScraper {
                 };
               }
             }
-            
+
+            // ✨ Extract league
+            const league = extractLeague(el);
+
             results.push({
               id: el.id || `basketball_${i}_${Date.now()}`,
               sport: 'basketball',
               homeTeam: homeTeam,
               awayTeam: awayTeam,
-              league: 'Unknown League',
+              league: league,
               time: time,
               date: new Date().toISOString().split('T')[0],
               odds: odds,
@@ -440,23 +539,48 @@ class FlashscoreScraper {
       }
 
       const matchData = await this.page.evaluate(() => {
+        // Helper to extract league (same logic as other sports)
+        function extractLeague(el) {
+          let league = 'Unknown League';
+          let prev = el.previousElementSibling;
+          for (let j = 0; j < 10; j++) {
+            if (!prev) break;
+            const text = prev.textContent.trim();
+            if (text.length === 0) {
+              prev = prev.previousElementSibling;
+              continue;
+            }
+            if (text.length < 150 && /[A-Z]/.test(text[0])) {
+              league = text.substring(0, 100).trim()
+                .replace(/\s*1X2\s*$/, '')
+                .replace(/\s*Over\/Under\s*$/, '')
+                .replace(/\s*Standings.*$/, '')
+                .replace(/\s*Scores.*$/, '')
+                .trim();
+              return league;
+            }
+            prev = prev.previousElementSibling;
+          }
+          return league;
+        }
+
         const matches = [];
-        const matchElements = document.querySelectorAll('[id^="g_2"]') || 
+        const matchElements = document.querySelectorAll('[id^="g_2"]') ||
                              document.querySelectorAll('.event__match');
-        
+
         for (let i = 0; i < matchElements.length; i++) {
           const el = matchElements[i];
-          
+
           try {
             let homeTeam = 'Unknown';
             let awayTeam = 'Unknown';
-            
+
             const homeEl = el.querySelector('.event__participant--home');
             const awayEl = el.querySelector('.event__participant--away');
-            
+
             if (homeEl) homeTeam = homeEl.textContent.trim();
             if (awayEl) awayTeam = awayEl.textContent.trim();
-            
+
             if (homeTeam === 'Unknown' && el.title) {
               const parts = el.title.split(' - ');
               if (parts.length >= 2) {
@@ -464,15 +588,15 @@ class FlashscoreScraper {
                 awayTeam = parts[1].trim();
               }
             }
-            
+
             let time = 'TBD';
             const timeEl = el.querySelector('.event__time');
             if (timeEl) time = timeEl.textContent.trim();
-            
+
             // Extract odds for tennis (player 1 / player 2)
             let odds = {};
             const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
-            
+
             if (allOddsDiv.length >= 2) {
               const values = Array.from(allOddsDiv).map(odd => {
                 const span = odd.querySelector('span');
@@ -483,7 +607,7 @@ class FlashscoreScraper {
                 }
                 return null;
               }).filter(v => v !== null);
-              
+
               if (values.length >= 2) {
                 odds['Flashscore'] = {
                   home: values[0],
@@ -491,13 +615,16 @@ class FlashscoreScraper {
                 };
               }
             }
-            
+
+            // ✨ Extract league
+            const league = extractLeague(el);
+
             matches.push({
               id: el.id || `tennis_${i}_${Date.now()}`,
               sport: 'tennis',
               homeTeam: homeTeam,
               awayTeam: awayTeam,
-              league: 'Unknown League',
+              league: league,
               time: time,
               date: new Date().toISOString().split('T')[0],
               odds: odds,
