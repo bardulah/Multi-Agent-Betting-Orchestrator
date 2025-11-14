@@ -384,10 +384,6 @@ class FlashscoreScraper {
 
       await this.delay(this.config.scraper.rate_limit_delay);
 
-      await this.page.waitForSelector('.event__match', { timeout: 10000 }).catch(() => {
-        console.log('No matches found or selector changed');
-      });
-
       const matchData = await this.page.evaluate((selector) => {
         // Helper to extract league (same logic as football)
         function extractLeague(el) {
@@ -666,46 +662,63 @@ class FlashscoreScraper {
 
       await this.delay(this.config.scraper.rate_limit_delay);
 
-      await this.page.waitForSelector('.event__match', { timeout: 10000 }).catch(() => {
-        console.log('No matches found or selector changed');
+      // Wait for hockey matches to load
+      await this.page.waitForSelector('.event__match', { timeout: 15000 }).catch(() => {
+        console.log('⚠️  Timeout waiting for .event__match');
       });
 
+      // Verify matches are there
+      const matchCount = await this.page.evaluate(() => document.querySelectorAll('.event__match').length);
+      console.log(`✓ Found ${matchCount} match elements on hockey page`);
+
       const matchData = await this.page.evaluate((selector) => {
-        const elements = document.querySelectorAll(selector);
+        // For hockey, try to find match rows
+        let elements = document.querySelectorAll(selector);
+
         const results = [];
-        const maxMatches = Math.min(elements.length, 20);
+        const maxMatches = Math.min(elements.length, 50);
 
         for (let i = 0; i < maxMatches; i++) {
           const el = elements[i];
-          
+
           try {
-            // Extract team names
+            // Extract team names directly from element
             const homeEl = el.querySelector('.event__participant--home');
             const awayEl = el.querySelector('.event__participant--away');
-            const timeEl = el.querySelector('.event__time');
-            
+            let timeEl = el.querySelector('.event__time');
+
+            // Hockey doesn't have time, look for stage instead
+            if (!timeEl) {
+              timeEl = el.querySelector('.event__stage');
+            }
+
             let homeTeam = 'Unknown';
             let awayTeam = 'Unknown';
             let time = 'TBD';
 
+            // Extract team names
             if (homeEl && awayEl) {
               const homeText = homeEl.textContent.trim();
               const awayText = awayEl.textContent.trim();
-              
-              if (homeText && awayText) {
+
+              if (homeText && awayText && homeText.length > 0 && awayText.length > 0) {
                 homeTeam = homeText;
                 awayTeam = awayText;
               }
             }
 
+            // Extract time or stage
             if (timeEl) {
-              time = timeEl.textContent.trim();
+              const timeText = timeEl.textContent.trim();
+              if (timeText && timeText.length > 0) {
+                time = timeText;
+              }
             }
-            
+
             // Extract odds for hockey (usually home/away, no draw)
             let odds = {};
             const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
-            
+
             if (allOddsDiv.length >= 2) {
               const values = Array.from(allOddsDiv).map(odd => {
                 const span = odd.querySelector('span');
@@ -716,7 +729,7 @@ class FlashscoreScraper {
                 }
                 return null;
               }).filter(v => v !== null);
-              
+
               if (values.length >= 2) {
                 odds['Flashscore'] = {
                   home: values[0],
@@ -724,8 +737,8 @@ class FlashscoreScraper {
                 };
               }
             }
-            
-            matches.push({
+
+            results.push({
               id: el.id || `hockey_${i}_${Date.now()}`,
               sport: 'hockey',
               homeTeam: homeTeam,
@@ -736,13 +749,13 @@ class FlashscoreScraper {
               odds: odds,
               _hasOdds: Object.keys(odds).length > 0
             });
-            
+
           } catch (err) {
-            console.error(`Error extracting hockey match ${i}:`, err.message);
+            // Silent catch for extraction errors
           }
         }
-        
-        return matches;
+
+        return results;
       }, '.event__match');
 
       const validMatches = (matchData || []).filter(m => 
@@ -819,7 +832,7 @@ class FlashscoreScraper {
 function parseCliArgs() {
   const args = process.argv.slice(2);
   const options = {
-    sports: ['football', 'basketball', 'tennis'],  // Default: all sports
+    sports: ['football', 'basketball', 'tennis', 'hockey'],  // Default: all sports
     leagues: null,  // Default: all leagues
     limit: null,    // Default: no limit
     help: false
@@ -857,8 +870,8 @@ USAGE:
 
 OPTIONS:
   --sports SPORT1,SPORT2   Comma-separated list of sports to scrape
-                           Available: football, basketball, tennis
-                           Default: football,basketball,tennis
+                           Available: football, basketball, tennis, hockey
+                           Default: football,basketball,tennis,hockey
 
   --leagues LEAGUE1,LEAGUE2 Comma-separated list of leagues to include
                            Example: "Champions League,Premier League"
@@ -926,6 +939,9 @@ async function main() {
 
   const scraper = new FlashscoreScraper(config);
 
+  // Override sports list with CLI options
+  scraper.config.sports = options.sports;
+
   try {
     await scraper.initialize();
     await scraper.scrapeAll();
@@ -945,7 +961,7 @@ async function main() {
       console.log(`🏆 Filtered by league: ${beforeFilter} → ${scraper.matches.length} matches`);
     }
 
-    if (options.sports.length < 3) {
+    if (options.sports.length < 4) {  // If not requesting all 4 sports
       const sportSet = new Set(options.sports);
       const beforeFilter = scraper.matches.length;
       scraper.matches = scraper.matches.filter(m =>
