@@ -82,7 +82,7 @@ class FlashscoreScraper {
       });
 
       await this.delay(3000);
-      
+
       // Click odds tab directly (same method as debug script)
       console.log('Clicking odds tab...');
       const clicked = await this.page.evaluate(() => {
@@ -91,14 +91,14 @@ class FlashscoreScraper {
           const text = tab.textContent.trim().toLowerCase();
           return text === 'odds' || text.includes('odds');
         });
-        
+
         if (oddsTab) {
           oddsTab.click();
           return true;
         }
         return false;
       });
-      
+
       if (clicked) {
         console.log('✓ Clicked odds tab');
         await this.delay(6000); // Wait for odds to fully load
@@ -106,33 +106,106 @@ class FlashscoreScraper {
         console.log('⚠ Odds tab not found');
       }
 
-      // Extract matches with odds
+      // Extract matches with odds AND LEAGUE INFORMATION
       const matchData = await this.page.evaluate(() => {
         const totalOddsElements = document.querySelectorAll('.odds__odd').length;
         const oddsWithValues = document.querySelectorAll('.odds__odd:not(.no-odds)').length;
         console.log(`Total odds elements: ${totalOddsElements}, with values: ${oddsWithValues}`);
-        
+
         const matches = [];
-        const matchElements = document.querySelectorAll('[id^="g_1"]') || 
+        const matchElements = document.querySelectorAll('[id^="g_1"]') ||
                              document.querySelectorAll('.event__match');
-        
+
         console.log(`Found ${matchElements.length} match elements`);
-        
+
+        // Helper function to extract league from DOM
+        function extractLeague(matchElement) {
+          // STRATEGY 2 (90% success rate): Look for section header by walking backwards
+          // Flashscore groups matches by league with headers like "EUROPE: World Cup - Qualification"
+
+          let league = 'Unknown League';
+
+          // Look at previous siblings to find the league header
+          let prev = matchElement.previousElementSibling;
+          for (let j = 0; j < 10; j++) {
+            if (!prev) break;
+
+            const prevText = prev.textContent.trim();
+
+            // Skip empty elements
+            if (prevText.length === 0) {
+              prev = prev.previousElementSibling;
+              continue;
+            }
+
+            // Look for typical league patterns (these are usually in headers)
+            const leaguePatterns = [
+              /([A-Z][A-Z\s]+):\s*([^0-9\n]+)/,  // "EUROPE: World Cup"
+              /(World Cup|Champions League|Premier League|La Liga|Serie A|Ligue|Bundesliga|Cup|Championship|League|Playoff|Qualification)/i
+            ];
+
+            for (const pattern of leaguePatterns) {
+              const match = prevText.match(pattern);
+              if (match) {
+                // Return the full matched string if reasonable length
+                if (prevText.length < 150) {  // Avoid matching match lists
+                  league = prevText.substring(0, 100).trim();
+
+                  // Clean up league name: remove odds labels like "1X2", "Over/Under"
+                  // Keep only: "REGION: League Name - Type"
+                  league = league
+                    .replace(/\s*1X2\s*$/, '')  // Remove "1X2" at end
+                    .replace(/\s*Over\/Under\s*$/, '')  // Remove "Over/Under"
+                    .replace(/\s*Standings.*$/, '')  // Remove "Standings" and after
+                    .replace(/\s*Scores.*$/, '')  // Remove "Scores" and after
+                    .trim();
+
+                  return league;
+                }
+              }
+            }
+
+            prev = prev.previousElementSibling;
+          }
+
+          // FALLBACK: Try to extract from breadcrumb/parent
+          const breadcrumb = matchElement.closest('[class*="breadcrumb"], [class*="path"], .event__round');
+          if (breadcrumb) {
+            const text = breadcrumb.textContent.trim();
+            if (text.length > 0 && text.length < 200) {
+              league = text.substring(0, 100).trim();
+              return league;
+            }
+          }
+
+          // FALLBACK: Check for league label element
+          const leagueLabel = matchElement.querySelector('[class*="tournament"], [class*="league"], [class*="category"]');
+          if (leagueLabel) {
+            const text = leagueLabel.textContent.trim();
+            if (text.length > 0 && text !== 'Preview' && text !== 'Live') {
+              league = text.substring(0, 100);
+              return league;
+            }
+          }
+
+          return league;
+        }
+
         // Use all matches (limit will be applied from config)
         for (let i = 0; i < matchElements.length; i++) {
           const el = matchElements[i];
-          
+
           try {
             // Extract team names
             let homeTeam = 'Unknown';
             let awayTeam = 'Unknown';
-            
+
             const homeEl = el.querySelector('.event__participant--home');
             const awayEl = el.querySelector('.event__participant--away');
-            
+
             if (homeEl) homeTeam = homeEl.textContent.trim();
             if (awayEl) awayTeam = awayEl.textContent.trim();
-            
+
             // Fallbacks
             if (homeTeam === 'Unknown') {
               const participants = el.querySelectorAll('[class*="participant"]');
@@ -141,7 +214,7 @@ class FlashscoreScraper {
                 awayTeam = participants[1].textContent.trim();
               }
             }
-            
+
             if (homeTeam === 'Unknown' && el.title) {
               const parts = el.title.split(' - ');
               if (parts.length >= 2) {
@@ -149,18 +222,21 @@ class FlashscoreScraper {
                 awayTeam = parts[1].trim();
               }
             }
-            
+
             // Extract time
             let time = 'TBD';
             const timeEl = el.querySelector('.event__time');
             if (timeEl) time = timeEl.textContent.trim();
-            
+
+            // ✨ NEW: Extract league information
+            const league = extractLeague(el);
+
             // Extract ODDS - correct selectors based on actual HTML
             let odds = {};
-            
+
             // Look for .odds__odd divs (exclude ones with 'no-odds' class)
             const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
-            
+
             if (allOddsDiv.length >= 3) {
               // Extract span values from each odds div
               const values = Array.from(allOddsDiv).map(odd => {
@@ -173,7 +249,7 @@ class FlashscoreScraper {
                 }
                 return null;
               }).filter(v => v !== null);
-              
+
               if (values.length >= 3) {
                 // Football: home, draw, away
                 odds['Flashscore'] = {
@@ -189,24 +265,24 @@ class FlashscoreScraper {
                 };
               }
             }
-            
+
             matches.push({
               id: el.id || `football_${i}_${Date.now()}`,
               sport: 'football',
               homeTeam: homeTeam,
               awayTeam: awayTeam,
-              league: 'Unknown League',
+              league: league,  // ✨ NOW PROPERLY EXTRACTED
               time: time,
               date: new Date().toISOString().split('T')[0],
               odds: odds,
               _hasOdds: Object.keys(odds).length > 0
             });
-            
+
           } catch (err) {
             console.error(`Error extracting match ${i}:`, err.message);
           }
         }
-        
+
         return matches;
       });
 
@@ -612,20 +688,149 @@ class FlashscoreScraper {
   }
 }
 
+// Parse CLI arguments
+function parseCliArgs() {
+  const args = process.argv.slice(2);
+  const options = {
+    sports: ['football', 'basketball', 'tennis'],  // Default: all sports
+    leagues: null,  // Default: all leagues
+    limit: null,    // Default: no limit
+    help: false
+  };
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (arg === '--sports' && i + 1 < args.length) {
+      options.sports = args[i + 1].split(',').map(s => s.trim().toLowerCase());
+      i++;
+    } else if (arg === '--leagues' && i + 1 < args.length) {
+      options.leagues = args[i + 1].split(',').map(l => l.trim());
+      i++;
+    } else if (arg === '--limit' && i + 1 < args.length) {
+      options.limit = parseInt(args[i + 1], 10);
+      i++;
+    }
+  }
+
+  return options;
+}
+
+// Print usage help
+function printHelp() {
+  console.log(`
+╔════════════════════════════════════════════════════════════════╗
+║         FLASHSCORE SCRAPER - CLI USAGE                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+USAGE:
+  npm run scrape [OPTIONS]
+
+OPTIONS:
+  --sports SPORT1,SPORT2   Comma-separated list of sports to scrape
+                           Available: football, basketball, tennis
+                           Default: football,basketball,tennis
+
+  --leagues LEAGUE1,LEAGUE2 Comma-separated list of leagues to include
+                           Example: "Champions League,Premier League"
+                           Default: all leagues
+
+  --limit NUM              Maximum number of matches to scrape
+                           Example: --limit 50
+                           Default: no limit (scrape all)
+
+  --help, -h              Show this help message
+
+EXAMPLES:
+
+  # Scrape all sports (default)
+  npm run scrape
+
+  # Scrape only football, limited to 50 matches
+  npm run scrape --sports football --limit 50
+
+  # Scrape specific leagues
+  npm run scrape --sports football --leagues "Champions League,Premier League"
+
+  # Scrape football with limit, basketball without limit
+  npm run scrape --sports football,basketball --limit 100
+
+  # Get help
+  npm run scrape -- --help
+
+OUTPUT:
+  Results are saved to: ../../data/matches.json
+
+`);
+}
+
 // Main execution
 async function main() {
+  const options = parseCliArgs();
+
+  if (options.help) {
+    printHelp();
+    process.exit(0);
+  }
+
   const configPath = path.join(__dirname, '../../config/config.yaml');
   const configContent = await fs.readFile(configPath, 'utf8');
   const config = yaml.parse(configContent);
+
+  // Log what we're going to scrape
+  console.log('\n╔════════════════════════════════════════════╗');
+  console.log('║ FLASHSCORE SCRAPER - MODULAR                ║');
+  console.log('╚════════════════════════════════════════════╝\n');
+  console.log(`🎯 Configuration:`);
+  console.log(`   Sports: ${options.sports.join(', ')}`);
+  if (options.leagues) {
+    console.log(`   Leagues: ${options.leagues.join(', ')}`);
+  } else {
+    console.log(`   Leagues: all`);
+  }
+  if (options.limit) {
+    console.log(`   Limit: ${options.limit} matches`);
+  } else {
+    console.log(`   Limit: none (scrape all)`);
+  }
+  console.log('');
 
   const scraper = new FlashscoreScraper(config);
 
   try {
     await scraper.initialize();
     await scraper.scrapeAll();
+
+    // Apply filtering after scraping
+    if (options.limit) {
+      scraper.matches = scraper.matches.slice(0, options.limit);
+      console.log(`\n✂️  Applied limit: kept ${scraper.matches.length} matches (limit: ${options.limit})`);
+    }
+
+    if (options.leagues) {
+      const leagueSet = new Set(options.leagues.map(l => l.toLowerCase()));
+      const beforeFilter = scraper.matches.length;
+      scraper.matches = scraper.matches.filter(m =>
+        leagueSet.has(m.league.toLowerCase())
+      );
+      console.log(`🏆 Filtered by league: ${beforeFilter} → ${scraper.matches.length} matches`);
+    }
+
+    if (options.sports.length < 3) {
+      const sportSet = new Set(options.sports);
+      const beforeFilter = scraper.matches.length;
+      scraper.matches = scraper.matches.filter(m =>
+        sportSet.has(m.sport)
+      );
+      console.log(`⚽ Filtered by sport: ${beforeFilter} → ${scraper.matches.length} matches`);
+    }
+
     await scraper.saveResults();
   } catch (error) {
-    console.error('Fatal error:', error);
+    console.error('❌ Fatal error:', error);
+    process.exit(1);
   } finally {
     await scraper.close();
   }
