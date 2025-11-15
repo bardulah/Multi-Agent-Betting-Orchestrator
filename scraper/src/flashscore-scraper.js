@@ -671,8 +671,32 @@ class FlashscoreScraper {
       const matchCount = await this.page.evaluate(() => document.querySelectorAll('.event__match').length);
       console.log(`✓ Found ${matchCount} match elements on hockey page`);
 
+      // Click odds tab to load odds data (critical for hockey)
+      console.log('Clicking odds tab for hockey page...');
+      try {
+        const clicked = await this.page.evaluate(() => {
+          const filterTabs = document.querySelectorAll('.filters__tab');
+          for (let tab of filterTabs) {
+            const text = tab.textContent.trim().toLowerCase();
+            if (text === 'odds') {
+              tab.click();
+              return true;
+            }
+          }
+          return false;
+        });
+
+        if (clicked) {
+          console.log('✓ Clicked odds tab');
+          await this.delay(6000); // Wait for odds to load via AJAX
+        } else {
+          console.log('⚠️  Odds tab not found on hockey page');
+        }
+      } catch (err) {
+        console.log('⚠️  Error clicking odds tab on hockey:', err.message);
+      }
+
       const matchData = await this.page.evaluate((selector) => {
-        // For hockey, try to find match rows
         let elements = document.querySelectorAll(selector);
 
         const results = [];
@@ -715,22 +739,28 @@ class FlashscoreScraper {
               }
             }
 
-            // Extract odds for hockey (usually home/away, no draw)
+            // Extract odds for hockey (home/draw/away - hockey has 3 outcomes like football)
             let odds = {};
-            const allOddsDiv = el.querySelectorAll('.odds__odd:not(.no-odds)');
+            const allOddsDiv = el.querySelectorAll('.odds__odd');
 
-            if (allOddsDiv.length >= 2) {
+            if (allOddsDiv.length >= 3) {
+              // Extract text values directly from .odds__odd divs (not spans)
               const values = Array.from(allOddsDiv).map(odd => {
-                const span = odd.querySelector('span');
-                if (span) {
-                  const text = span.textContent.trim();
-                  const num = parseFloat(text);
-                  return (!isNaN(num) && text !== '-') ? num : null;
-                }
-                return null;
+                const text = odd.textContent.trim();
+                const num = parseFloat(text);
+                // Only accept valid numbers (not "-" or empty)
+                return (!isNaN(num) && text !== '-' && text.length > 0) ? num : null;
               }).filter(v => v !== null);
 
-              if (values.length >= 2) {
+              if (values.length >= 3) {
+                // Hockey: home, draw, away (same as football - 3 outcomes)
+                odds['Flashscore'] = {
+                  home: values[0],
+                  draw: values[1],
+                  away: values[2]
+                };
+              } else if (values.length >= 2) {
+                // Fallback: if only 2 odds (some matches might be incomplete)
                 odds['Flashscore'] = {
                   home: values[0],
                   away: values[1]
@@ -758,13 +788,13 @@ class FlashscoreScraper {
         return results;
       }, '.event__match');
 
-      const validMatches = (matchData || []).filter(m => 
+      const validMatches = (matchData || []).filter(m =>
         m.homeTeam !== 'Unknown' && m.awayTeam !== 'Unknown'
       );
-      
+
       console.log(`Extracted: ${(matchData || []).length} total, ${validMatches.length} valid`);
       console.log(`Matches with odds: ${validMatches.filter(m => m._hasOdds).length}`);
-      
+
       matches.push(...validMatches);
 
     } catch (error) {
