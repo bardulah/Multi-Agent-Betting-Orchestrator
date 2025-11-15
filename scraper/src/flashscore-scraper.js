@@ -191,72 +191,68 @@ class FlashscoreScraper {
 
         // Helper function to extract league from DOM
         function extractLeague(matchElement) {
-          // STRATEGY 2 (90% success rate): Look for section header by walking backwards
-          // Flashscore groups matches by league with headers like "EUROPE: World Cup - Qualification"
-
+          // PRIMARY (100% success): Use .headerLeague__wrapper which ALL sports use
           let league = 'Unknown League';
 
-          // Look at previous siblings to find the league header
           let prev = matchElement.previousElementSibling;
-          for (let j = 0; j < 10; j++) {
+          for (let j = 0; j < 30; j++) {
             if (!prev) break;
 
-            const prevText = prev.textContent.trim();
+            if (prev.className && prev.className.includes('headerLeague__wrapper')) {
+              const text = prev.textContent.trim();
+              if (text.length > 0) {
+                league = text.substring(0, 150).trim();
 
-            // Skip empty elements
-            if (prevText.length === 0) {
-              prev = prev.previousElementSibling;
-              continue;
-            }
+                // Clean up league name
+                league = league
+                  .replace(/\s*1X2\s*$/i, '')
+                  .replace(/\s*Over\/Under\s*$/i, '')
+                  .replace(/\s*Standings.*$/i, '')
+                  .replace(/\s*Scores.*$/i, '')
+                  .replace(/\s*12$/i, '')  // Tennis suffix
+                  .trim();
 
-            // Look for typical league patterns (these are usually in headers)
-            const leaguePatterns = [
-              /([A-Z][A-Z\s]+):\s*([^0-9\n]+)/,  // "EUROPE: World Cup"
-              /(World Cup|Champions League|Premier League|La Liga|Serie A|Ligue|Bundesliga|Cup|Championship|League|Playoff|Qualification)/i
-            ];
-
-            for (const pattern of leaguePatterns) {
-              const match = prevText.match(pattern);
-              if (match) {
-                // Return the full matched string if reasonable length
-                if (prevText.length < 150) {  // Avoid matching match lists
-                  league = prevText.substring(0, 100).trim();
-
-                  // Clean up league name: remove odds labels like "1X2", "Over/Under"
-                  // Keep only: "REGION: League Name - Type"
-                  league = league
-                    .replace(/\s*1X2\s*$/, '')  // Remove "1X2" at end
-                    .replace(/\s*Over\/Under\s*$/, '')  // Remove "Over/Under"
-                    .replace(/\s*Standings.*$/, '')  // Remove "Standings" and after
-                    .replace(/\s*Scores.*$/, '')  // Remove "Scores" and after
-                    .trim();
-
-                  return league;
-                }
+                return league;
               }
             }
 
             prev = prev.previousElementSibling;
           }
 
-          // FALLBACK: Try to extract from breadcrumb/parent
-          const breadcrumb = matchElement.closest('[class*="breadcrumb"], [class*="path"], .event__round');
-          if (breadcrumb) {
-            const text = breadcrumb.textContent.trim();
-            if (text.length > 0 && text.length < 200) {
-              league = text.substring(0, 100).trim();
-              return league;
-            }
-          }
+          // FALLBACK: Look for patterns in previous siblings
+          prev = matchElement.previousElementSibling;
+          for (let j = 0; j < 10; j++) {
+            if (!prev) break;
 
-          // FALLBACK: Check for league label element
-          const leagueLabel = matchElement.querySelector('[class*="tournament"], [class*="league"], [class*="category"]');
-          if (leagueLabel) {
-            const text = leagueLabel.textContent.trim();
-            if (text.length > 0 && text !== 'Preview' && text !== 'Live') {
-              league = text.substring(0, 100);
-              return league;
+            const prevText = prev.textContent.trim();
+
+            if (prevText.length === 0 || (prev.className && prev.className.includes('event__match'))) {
+              prev = prev.previousElementSibling;
+              continue;
             }
+
+            const leaguePatterns = [
+              /([A-Z][A-Z\s]+):\s*([^0-9\n]+)/,
+              /(World Cup|Champions League|Premier League|La Liga|Serie A|Ligue|Bundesliga|Cup|Championship|League|Playoff|Qualification)/i
+            ];
+
+            for (const pattern of leaguePatterns) {
+              const match = prevText.match(pattern);
+              if (match && prevText.length < 150) {
+                league = prevText.substring(0, 100).trim();
+
+                league = league
+                  .replace(/\s*1X2\s*$/i, '')
+                  .replace(/\s*Over\/Under\s*$/i, '')
+                  .replace(/\s*Standings.*$/i, '')
+                  .replace(/\s*Scores.*$/i, '')
+                  .trim();
+
+                return league;
+              }
+            }
+
+            prev = prev.previousElementSibling;
           }
 
           return league;
@@ -384,15 +380,63 @@ class FlashscoreScraper {
 
       await this.delay(this.config.scraper.rate_limit_delay);
 
+      // Click odds tab to load odds data (critical for basketball)
+      console.log('Clicking odds tab...');
+      const clicked = await this.page.evaluate(() => {
+        const allTabs = document.querySelectorAll('.filters__tab');
+        const oddsTab = Array.from(allTabs).find(tab => {
+          const text = tab.textContent.trim().toLowerCase();
+          return text === 'odds' || text.includes('odds');
+        });
+
+        if (oddsTab) {
+          oddsTab.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (clicked) {
+        console.log('✓ Clicked odds tab');
+        await this.delay(6000); // Wait for odds to load via AJAX
+      } else {
+        console.log('⚠️  Odds tab not found');
+      }
+
       const matchData = await this.page.evaluate((selector) => {
-        // Helper to extract league (same logic as football)
+        // Helper to extract league - use .headerLeague__wrapper (works for all sports)
         function extractLeague(el) {
           let league = 'Unknown League';
+
+          // PRIMARY: Use .headerLeague__wrapper
           let prev = el.previousElementSibling;
+          for (let j = 0; j < 30; j++) {
+            if (!prev) break;
+
+            if (prev.className && prev.className.includes('headerLeague__wrapper')) {
+              const text = prev.textContent.trim();
+              if (text.length > 0) {
+                league = text.substring(0, 150).trim();
+                league = league
+                  .replace(/\s*1X2\s*$/i, '')
+                  .replace(/\s*Over\/Under\s*$/i, '')
+                  .replace(/\s*Standings.*$/i, '')
+                  .replace(/\s*Scores.*$/i, '')
+                  .replace(/\s*12$/i, '')
+                  .trim();
+                return league;
+              }
+            }
+
+            prev = prev.previousElementSibling;
+          }
+
+          // FALLBACK: Pattern matching
+          prev = el.previousElementSibling;
           for (let j = 0; j < 10; j++) {
             if (!prev) break;
             const text = prev.textContent.trim();
-            if (text.length === 0) {
+            if (text.length === 0 || (prev.className && prev.className.includes('event__match'))) {
               prev = prev.previousElementSibling;
               continue;
             }
@@ -535,14 +579,39 @@ class FlashscoreScraper {
       }
 
       const matchData = await this.page.evaluate(() => {
-        // Helper to extract league (same logic as other sports)
+        // Helper to extract league - use .headerLeague__wrapper (works for all sports)
         function extractLeague(el) {
           let league = 'Unknown League';
+
+          // PRIMARY: Use .headerLeague__wrapper
           let prev = el.previousElementSibling;
+          for (let j = 0; j < 30; j++) {
+            if (!prev) break;
+
+            if (prev.className && prev.className.includes('headerLeague__wrapper')) {
+              const text = prev.textContent.trim();
+              if (text.length > 0) {
+                league = text.substring(0, 150).trim();
+                league = league
+                  .replace(/\s*1X2\s*$/i, '')
+                  .replace(/\s*Over\/Under\s*$/i, '')
+                  .replace(/\s*Standings.*$/i, '')
+                  .replace(/\s*Scores.*$/i, '')
+                  .replace(/\s*12$/i, '')
+                  .trim();
+                return league;
+              }
+            }
+
+            prev = prev.previousElementSibling;
+          }
+
+          // FALLBACK: Pattern matching
+          prev = el.previousElementSibling;
           for (let j = 0; j < 10; j++) {
             if (!prev) break;
             const text = prev.textContent.trim();
-            if (text.length === 0) {
+            if (text.length === 0 || (prev.className && prev.className.includes('event__match'))) {
               prev = prev.previousElementSibling;
               continue;
             }
@@ -697,6 +766,56 @@ class FlashscoreScraper {
       }
 
       const matchData = await this.page.evaluate((selector) => {
+        // Helper to extract league - use .headerLeague__wrapper (works for all sports)
+        function extractLeague(el) {
+          let league = 'Unknown League';
+
+          // PRIMARY: Use .headerLeague__wrapper
+          let prev = el.previousElementSibling;
+          for (let j = 0; j < 30; j++) {
+            if (!prev) break;
+
+            if (prev.className && prev.className.includes('headerLeague__wrapper')) {
+              const text = prev.textContent.trim();
+              if (text.length > 0) {
+                league = text.substring(0, 150).trim();
+                league = league
+                  .replace(/\s*1X2\s*$/i, '')
+                  .replace(/\s*Over\/Under\s*$/i, '')
+                  .replace(/\s*Standings.*$/i, '')
+                  .replace(/\s*Scores.*$/i, '')
+                  .replace(/\s*12$/i, '')
+                  .trim();
+                return league;
+              }
+            }
+
+            prev = prev.previousElementSibling;
+          }
+
+          // FALLBACK: Pattern matching
+          prev = el.previousElementSibling;
+          for (let j = 0; j < 10; j++) {
+            if (!prev) break;
+            const text = prev.textContent.trim();
+            if (text.length === 0 || (prev.className && prev.className.includes('event__match'))) {
+              prev = prev.previousElementSibling;
+              continue;
+            }
+            if (text.length > 0 && text.length < 150 && /[A-Z]/.test(text[0])) {
+              league = text.substring(0, 100).trim()
+                .replace(/\s*1X2\s*$/, '')
+                .replace(/\s*Over\/Under\s*$/, '')
+                .replace(/\s*Standings.*$/, '')
+                .replace(/\s*Scores.*$/, '')
+                .trim();
+              return league;
+            }
+            prev = prev.previousElementSibling;
+          }
+          return league;
+        }
+
         let elements = document.querySelectorAll(selector);
 
         const results = [];
@@ -768,12 +887,15 @@ class FlashscoreScraper {
               }
             }
 
+            // Extract league
+            const league = extractLeague(el);
+
             results.push({
               id: el.id || `hockey_${i}_${Date.now()}`,
               sport: 'hockey',
               homeTeam: homeTeam,
               awayTeam: awayTeam,
-              league: 'Unknown League',
+              league: league,
               time: time,
               date: new Date().toISOString().split('T')[0],
               odds: odds,
