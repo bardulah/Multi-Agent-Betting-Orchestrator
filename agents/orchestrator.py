@@ -209,12 +209,25 @@ class BettingSystemOrchestrator:
 
         self.logger.info(f"Completed analysis of {len(analyses)} matches")
 
-        # Extract results for synthesis
-        internet_picks_results = [a['internet_picks'] for a in analyses]
-        data_driven_results = [a['data_driven'] for a in analyses]
+        # Extract results for synthesis and add match_id to each result
+        internet_picks_results = []
+        data_driven_results = []
 
-        # Run synthesis agent
-        self.logger.info("Running synthesis agent...")
+        for analysis in analyses:
+            match_id = analysis['match']['id']
+
+            # Add match_id to internet picks result
+            internet_picks = analysis['internet_picks']
+            internet_picks['match_id'] = match_id
+            internet_picks_results.append(internet_picks)
+
+            # Add match_id to data-driven result
+            data_driven = analysis['data_driven']
+            data_driven['match_id'] = match_id
+            data_driven_results.append(data_driven)
+
+        # Run synthesis agent (3-layer: Internet Picks + Data-Driven → Synthesis)
+        self.logger.info("Running synthesis agent (3-layer analysis)...")
         recommendations = self.synthesis_agent.process_matches(
             matches,
             internet_picks_results,
