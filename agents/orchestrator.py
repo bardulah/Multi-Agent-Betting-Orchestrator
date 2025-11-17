@@ -445,6 +445,11 @@ def main():
         help='Path to match filter configuration file (e.g., config/filters/balanced.yaml)'
     )
     parser.add_argument(
+        '--interactive',
+        action='store_true',
+        help='Launch interactive match selection mode'
+    )
+    parser.add_argument(
         '--test-notification',
         action='store_true',
         help='Send a test notification and exit'
@@ -463,7 +468,29 @@ def main():
             print("✗ Failed to send test notification")
         return
 
-    orchestrator.run(filter_path=args.filter)
+    # Determine filter configuration
+    filter_config = None
+    filter_path = args.filter
+
+    # Launch interactive mode if requested or if no filter provided
+    if args.interactive or (not filter_path):
+        from utils.interactive_selector import InteractiveSelector
+        selector = InteractiveSelector()
+        filter_config = selector.run_interactive_session()
+
+        if filter_config:
+            # Save the interactive config to a temporary filter file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir='config/filters') as f:
+                import yaml
+                yaml.dump({'filter': filter_config}, f)
+                filter_path = f.name
+                print(f"\n✓ Configuration saved to: {filter_path}\n")
+        else:
+            print("❌ No configuration selected. Exiting.")
+            return
+
+    orchestrator.run(filter_path=filter_path)
 
 
 if __name__ == '__main__':
