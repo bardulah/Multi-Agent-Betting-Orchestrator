@@ -5,6 +5,8 @@
   "main": "src/flashscore-scraper.js",
   "scripts": {
     "scrape": "node src/flashscore-scraper.js",
+    "analyze-opportunities": "node analyze-opportunities.js",
+    "telegram-bot": "node src/telegramBot.js",
     "test": "node src/flashscore-scraper.js --test"
   },
   "keywords": ["scraper", "puppeteer", "flashscore", "betting", "odds"],
