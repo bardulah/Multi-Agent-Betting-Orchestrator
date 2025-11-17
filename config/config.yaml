@@ -36,13 +36,13 @@ agents:
 # Notification settings
 notifications:
   enabled: true
-  method: "email"  # email, telegram, or both
+  method: "both"  # email, telegram, or both
 
   email:
     smtp_server: "smtp.gmail.com"
     smtp_port: 587
-    sender_email: ""  # Set your sender email here or leave empty to skip email
-    recipient_email: ""  # Set your recipient email here
+    sender_email: "mtsaltnr@gmail.com"  # Your Gmail sender address
+    recipient_email: "algordal@gmail.com"  # Where to send notifications
     # sender_password is read from EMAIL_PASSWORD environment variable
 
   telegram:
