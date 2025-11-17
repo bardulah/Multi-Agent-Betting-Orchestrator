@@ -1,0 +1,17 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues: []
+  limits:
+    basketball: 15
+    football: 50
+    hockey: 20
+  name: Interactive Selection
+  sports:
+  - basketball
+  - football
+  - hockey

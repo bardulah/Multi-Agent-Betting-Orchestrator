@@ -69,8 +69,7 @@ class InteractiveSelector:
         # Use checkbox for multi-select
         selected_choices = questionary.checkbox(
             "Select sports (Use arrow keys, Space to select, Enter to confirm):",
-            choices=choices,
-            skip=False
+            choices=choices
         ).ask()
 
         if not selected_choices:
@@ -122,8 +121,7 @@ class InteractiveSelector:
         # Use checkbox for multi-select
         selected_choices = questionary.checkbox(
             "Select specific leagues (or leave empty for all):",
-            choices=league_choices,
-            skip=True  # Allow skipping to select all
+            choices=league_choices
         ).ask()
 
         # If user skipped or selected "All Leagues" option
@@ -193,9 +191,7 @@ class InteractiveSelector:
 
         selected_agents = questionary.checkbox(
             "Which agents should run?",
-            choices=agent_choices,
-            skip=False,
-            default=[0, 1, 2]  # All selected by default
+            choices=agent_choices
         ).ask()
 
         if not selected_agents:
