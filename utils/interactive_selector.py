@@ -54,72 +54,89 @@ class InteractiveSelector:
 
     def _show_sport_selection(self) -> List[str]:
         """Show multi-select checklist for sports"""
+        import questionary
+
         self._print_header("STEP 1: SELECT SPORTS")
 
         sports = sorted(self.sports_data.keys())
-        print("Available sports:")
-        for i, sport in enumerate(sports, 1):
+
+        # Create choices with match count info
+        choices = []
+        for sport in sports:
             count = len(self.sports_data[sport])
-            print(f"  [{i}] {sport.upper():15} ({count} matches)")
+            choices.append(f"{sport.upper():15} ({count:2} matches)")
 
-        print("\nSelect sports (comma-separated numbers, or 'a' for all):")
-        print("Example: 1,2 or a")
-        user_input = input("Your selection: ").strip().lower()
+        # Use checkbox for multi-select
+        selected_choices = questionary.checkbox(
+            "Select sports (Use arrow keys, Space to select, Enter to confirm):",
+            choices=choices,
+            skip=False
+        ).ask()
 
-        if user_input == 'a':
-            selected = sports
-            print(f"\n✅ Selected: {', '.join([s.upper() for s in selected])}")
-        else:
-            try:
-                indices = [int(x.strip()) - 1 for x in user_input.split(',')]
-                selected = [sports[i] for i in indices if 0 <= i < len(sports)]
-                if not selected:
-                    print("❌ Invalid selection")
-                    return self._show_sport_selection()
-                print(f"\n✅ Selected: {', '.join([s.upper() for s in selected])}")
-            except (ValueError, IndexError):
-                print("❌ Invalid input")
-                return self._show_sport_selection()
+        if not selected_choices:
+            print("❌ No sports selected")
+            return self._show_sport_selection()
 
+        # Extract sport names from selected choices
+        selected = []
+        for choice in selected_choices:
+            # Extract sport name from choice string (e.g., "FOOTBALL        (30 matches)" → "football")
+            sport_name = choice.split()[0].lower()
+            selected.append(sport_name)
+
+        print(f"\n✅ Selected: {', '.join([s.upper() for s in selected])}")
         return selected
 
     def _show_league_selection(self, selected_sports: List[str]) -> List[str]:
         """Show multi-select checklist for leagues (filtered by sport)"""
+        import questionary
+
         self._print_header("STEP 2: SELECT LEAGUES (OR SKIP FOR ALL)")
 
-        # Gather all leagues for selected sports
-        all_leagues = {}
-        for sport in selected_sports:
-            for league_name in self.sports_data[sport]:
-                if league_name not in all_leagues:
-                    all_leagues[league_name] = []
-                all_leagues[league_name].append(sport)
+        # Gather all leagues for selected sports, organized by sport
+        league_choices = []
+        league_map = {}  # Map display string to actual league name
 
-        if not all_leagues:
+        for sport in selected_sports:
+            sport_leagues = sorted(self.sports_data[sport].keys())
+            if sport_leagues:
+                # Add sport header (disabled so it's just a label)
+                sport_label = f"➤ {sport.upper()}"
+                league_choices.append(sport_label)
+
+                for league_name in sport_leagues:
+                    count = len(self.sports_data[sport][league_name])
+                    # Indent leagues under sport
+                    display_str = f"  {league_name[:52]:52} ({count:2})"
+                    league_choices.append(display_str)
+                    league_map[display_str] = league_name
+
+        if not league_choices:
             print("❌ No leagues found for selected sports")
             return []
 
-        # Display leagues grouped by sport
-        for sport in selected_sports:
-            sport_leagues = list(self.sports_data[sport].keys())
-            if sport_leagues:
-                print(f"\n📍 {sport.upper()}:")
-                for i, league in enumerate(sport_leagues, 1):
-                    count = len(self.sports_data[sport][league])
-                    print(f"  [{i}] {league[:55]:55} ({count:2})")
+        # Add special "All Leagues" option at the top
+        all_option = "✓ INCLUDE ALL AVAILABLE LEAGUES"
+        league_choices.insert(0, all_option)
 
-        print("\n\nSpecific leagues to analyze (or press Enter to select all):")
-        print("Example: ENGLAND: Premier League, EUROPE: Champions League")
-        print("(Enter 'skip' or leave blank to include all leagues)")
+        # Use checkbox for multi-select
+        selected_choices = questionary.checkbox(
+            "Select specific leagues (or leave empty for all):",
+            choices=league_choices,
+            skip=True  # Allow skipping to select all
+        ).ask()
 
-        user_input = input("Your selection: ").strip()
-
-        if not user_input or user_input.lower() == 'skip':
+        # If user skipped or selected "All Leagues" option
+        if selected_choices is None or not selected_choices or all_option in selected_choices:
             print(f"\n✅ Selected: All available leagues")
             return []  # Empty list means all leagues
 
-        # Parse user input - support comma-separated league names
-        selected_leagues = [l.strip() for l in user_input.split(',')]
+        # Extract actual league names from selected choices
+        selected_leagues = []
+        for choice in selected_choices:
+            if choice in league_map:
+                selected_leagues.append(league_map[choice])
+
         print(f"\n✅ Selected {len(selected_leagues)} specific league(s)")
         return selected_leagues
 
@@ -164,38 +181,32 @@ class InteractiveSelector:
 
     def _show_agents_configuration(self) -> Dict[str, bool]:
         """Configure which agents to run"""
+        import questionary
+
         self._print_header("STEP 4: SELECT ANALYSIS AGENTS")
 
-        print("Which agents should run?")
-        print("  [1] Internet Picks (finds consensus picks from internet)")
-        print("  [2] Data-Driven (analyzes statistics)")
-        print("  [3] Synthesis (combines results for final decision)")
-        print("\nTypically: all three (1,2,3) for best results\n")
+        agent_choices = [
+            "Internet Picks - Consensus tips from betting community",
+            "Data-Driven - Statistical analysis of match history",
+            "Synthesis - Combine both analyses for final decision"
+        ]
+
+        selected_agents = questionary.checkbox(
+            "Which agents should run?",
+            choices=agent_choices,
+            skip=False,
+            default=[0, 1, 2]  # All selected by default
+        ).ask()
+
+        if not selected_agents:
+            print("❌ No agents selected")
+            return self._show_agents_configuration()
 
         agents_config = {
-            'run_internet_picks': True,
-            'run_data_driven': True,
-            'run_synthesis': True
+            'run_internet_picks': any("Internet Picks" in a for a in selected_agents),
+            'run_data_driven': any("Data-Driven" in a for a in selected_agents),
+            'run_synthesis': any("Synthesis" in a for a in selected_agents)
         }
-
-        user_input = input("Select agents to run (comma-separated, or 'a' for all): ").strip().lower()
-
-        if user_input == 'a' or not user_input:
-            print("\n✅ All agents enabled")
-            return agents_config
-
-        # Parse selections
-        selected = set()
-        try:
-            for x in user_input.split(','):
-                selected.add(int(x.strip()))
-        except ValueError:
-            print("❌ Invalid input, using all agents")
-            return agents_config
-
-        agents_config['run_internet_picks'] = 1 in selected
-        agents_config['run_data_driven'] = 2 in selected
-        agents_config['run_synthesis'] = 3 in selected
 
         agents_enabled = []
         if agents_config['run_internet_picks']:
