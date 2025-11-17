@@ -1,0 +1,32 @@
+# Fast filter - quick morning check
+# Minimal analysis for fast results
+
+filter:
+  enabled: true
+  name: "Fast - Quick Check"
+  description: "Quick morning check with minimal API usage (5 min execution)"
+
+  # Only top 2 sports
+  sports:
+    - football
+    - tennis
+
+  # Specific leagues (empty = all available)
+  leagues: []
+
+  # Per-sport limits - very conservative
+  limits:
+    football: 30
+    tennis: 20
+
+  # Skip expensive data-driven analysis for speed
+  analysis:
+    run_internet_picks: true
+    run_data_driven: false  # Skip expensive analysis
+    run_synthesis: false    # Skip synthesis for speed
+
+# Expected result: ~50 matches with consensus picks in ~5 minutes
+# Cost savings: 95% fewer API calls than full analysis
+
+# Usage:
+# python3 run.py --filter config/filters/fast.yaml

@@ -1,0 +1,34 @@
+# Balanced filter - recommended for daily use
+# Analyzes top sports with reasonable limits to reduce API usage
+
+filter:
+  enabled: true
+  name: "Balanced - Daily Analysis"
+  description: "Daily analysis with reduced API usage (20 min execution)"
+
+  # Select primary sports only (skip hockey)
+  sports:
+    - football
+    - tennis
+    - basketball
+
+  # Specific leagues (empty = all available for selected sports)
+  leagues: []
+
+  # Per-sport limits
+  limits:
+    football: 50
+    tennis: 40
+    basketball: 15
+
+  # Analysis configuration
+  analysis:
+    run_internet_picks: true
+    run_data_driven: true
+    run_synthesis: true
+
+# Expected result: ~105 matches analyzed in ~20 minutes
+# Cost savings: 75% fewer API calls than full analysis
+
+# Usage:
+# python3 run.py --filter config/filters/balanced.yaml

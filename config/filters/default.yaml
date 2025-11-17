@@ -1,0 +1,25 @@
+# Default filter - analyze all matches
+# This is what runs when no filter is specified
+
+filter:
+  enabled: true
+  name: "Default - All Matches"
+  description: "Analyze all scraped matches from all sports"
+
+  # Sports to include (empty = all available)
+  sports: []
+
+  # Specific leagues to include (empty = all available)
+  leagues: []
+
+  # Per-sport match limits (empty = no limit for that sport)
+  limits: {}
+
+  # Analysis configuration
+  analysis:
+    run_internet_picks: true
+    run_data_driven: true
+    run_synthesis: true
+
+# Usage:
+# python3 run.py --filter config/filters/default.yaml

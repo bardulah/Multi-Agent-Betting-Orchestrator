@@ -1,0 +1,38 @@
+# Football-focused filter
+# Deep analysis of football matches only, useful for football betting strategy
+
+filter:
+  enabled: true
+  name: "Football Focus - Deep Analysis"
+  description: "Deep analysis of football matches only with all agents"
+
+  # Football only
+  sports:
+    - football
+
+  # Specific leagues (empty = all available football)
+  leagues: []
+
+  # Per-sport limits
+  limits:
+    football: 100
+
+  # Full analysis pipeline
+  analysis:
+    run_internet_picks: true
+    run_data_driven: true
+    run_synthesis: true
+
+# Expected result: ~100 football matches analyzed in ~25 minutes
+# Good for: Football-specific strategy development and validation
+
+# ADVANCED: To analyze ONLY certain competitions, uncomment and modify:
+# Example: Only analyze World Cup Qualifiers and Championship league matches
+# leagues:
+#   - "EUROPE: World Cup - Qualification"
+#   - "ENGLAND: Premier League"
+#   - "SPAIN: La Liga"
+#   - "EUROPE: Euro U21 - Qualification"
+
+# Usage:
+# python3 run.py --filter config/filters/football-focus.yaml

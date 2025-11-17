@@ -273,24 +273,122 @@ class BettingSystemOrchestrator:
 
         self.logger.info(f"History updated: {history_file}")
 
-    def run(self):
+    def load_filter_config(self, filter_path: str = None) -> Dict:
+        """
+        Load filter configuration from file
+
+        Args:
+            filter_path: Path to filter YAML file
+
+        Returns:
+            Filter configuration dictionary
+        """
+        if not filter_path:
+            # Default: analyze all matches
+            return {
+                'enabled': False,
+                'sports': [],
+                'leagues': [],
+                'limits': {},
+                'analysis': {
+                    'run_internet_picks': True,
+                    'run_data_driven': True,
+                    'run_synthesis': True
+                }
+            }
+
+        try:
+            with open(filter_path, 'r') as f:
+                config = yaml.safe_load(f)
+                filter_config = config.get('filter', {})
+                self.logger.info(f"Loaded filter: {filter_config.get('name', 'Custom')}")
+                return filter_config
+        except Exception as e:
+            self.logger.error(f"Failed to load filter config: {e}")
+            return {'enabled': False, 'sports': [], 'leagues': [], 'limits': {}}
+
+    def apply_filters(self, matches: List[Dict], filter_config: Dict) -> List[Dict]:
+        """
+        Apply filter configuration to matches
+
+        Args:
+            matches: All scraped matches
+            filter_config: Filter configuration
+
+        Returns:
+            Filtered list of matches
+        """
+        if not filter_config.get('enabled', False):
+            self.logger.info(f"No filter applied. Analyzing all {len(matches)} matches.")
+            return matches
+
+        filtered = matches.copy()
+
+        # Filter by sport
+        sports = filter_config.get('sports', [])
+        if sports:
+            before = len(filtered)
+            filtered = [m for m in filtered if m.get('sport') in sports]
+            self.logger.info(f"✓ Sport filter: {before} → {len(filtered)} matches")
+
+        # Filter by league
+        leagues = filter_config.get('leagues', [])
+        if leagues:
+            league_set = set(l.lower() for l in leagues)
+            before = len(filtered)
+            filtered = [m for m in filtered if m.get('league', '').lower() in league_set]
+            self.logger.info(f"✓ League filter: {before} → {len(filtered)} matches")
+
+        # Apply per-sport limits
+        limits = filter_config.get('limits', {})
+        if limits:
+            from collections import defaultdict
+            limited = []
+            sport_counts = defaultdict(int)
+
+            for match in filtered:
+                sport = match.get('sport')
+                limit = limits.get(sport, float('inf'))
+
+                if sport_counts[sport] < limit:
+                    limited.append(match)
+                    sport_counts[sport] += 1
+
+            before = len(filtered)
+            filtered = limited
+            self.logger.info(f"✓ Applied limits: {before} → {len(filtered)} matches")
+
+        return filtered
+
+    def run(self, filter_path: str = None):
         """
         Main execution method
+
+        Args:
+            filter_path: Optional path to filter configuration file
         """
         self.logger.info("=" * 60)
         self.logger.info("Starting Multi-Agent Betting System")
         self.logger.info("=" * 60)
 
+        # Load filter configuration
+        filter_config = self.load_filter_config(filter_path)
+
         try:
             # Step 1: Scrape matches
             self.logger.info("\n[STEP 1] Scraping matches from Flashscore...")
-            matches = self.run_scraper()
+            all_matches = self.run_scraper()
 
-            if not matches:
+            if not all_matches:
                 self.logger.warning("No matches found. Exiting.")
                 return
 
-            self.logger.info(f"Found {len(matches)} matches to analyze")
+            self.logger.info(f"Found {len(all_matches)} matches total")
+
+            # Step 1b: Apply filters
+            self.logger.info("\n[STEP 1b] Applying match filters...")
+            matches = self.apply_filters(all_matches, filter_config)
+            self.logger.info(f"Selected {len(matches)} matches for analysis")
 
             # Step 2: Analyze matches with parallel agents
             self.logger.info("\n[STEP 2] Analyzing matches with Internet Picks and Data-Driven agents...")
@@ -342,6 +440,11 @@ def main():
         help='Path to configuration file'
     )
     parser.add_argument(
+        '--filter',
+        default=None,
+        help='Path to match filter configuration file (e.g., config/filters/balanced.yaml)'
+    )
+    parser.add_argument(
         '--test-notification',
         action='store_true',
         help='Send a test notification and exit'
@@ -360,7 +463,7 @@ def main():
             print("✗ Failed to send test notification")
         return
 
-    orchestrator.run()
+    orchestrator.run(filter_path=args.filter)
 
 
 if __name__ == '__main__':
