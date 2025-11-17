@@ -472,8 +472,8 @@ def main():
     filter_config = None
     filter_path = args.filter
 
-    # Launch interactive mode if requested or if no filter provided
-    if args.interactive or (not filter_path):
+    # Launch interactive mode only if explicitly requested
+    if args.interactive:
         from utils.interactive_selector import InteractiveSelector
         selector = InteractiveSelector()
         filter_config = selector.run_interactive_session()
