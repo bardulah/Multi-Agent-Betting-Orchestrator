@@ -1,0 +1,16 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues:
+  - "SLOVAKIA:\_Tipsport liga"
+  limits:
+    basketball: 15
+    hockey: 20
+  name: Interactive Selection
+  sports:
+  - basketball
+  - hockey

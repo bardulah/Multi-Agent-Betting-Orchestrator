@@ -140,7 +140,8 @@ class InteractiveSelector:
         print(f"\n✅ Selected {len(selected_leagues)} specific league(s)")
         return selected_leagues
 
-    def _show_limits_configuration(self, selected_sports: List[str]) -> Dict[str, int]:
+    def _show_limits_configuration(self, selected_sports: List[str],
+                                   selected_leagues: List[str] = None) -> Dict[str, int]:
         """Configure per-sport match limits"""
         self._print_header("STEP 3: SET MATCH LIMITS PER SPORT")
 
@@ -157,23 +158,41 @@ class InteractiveSelector:
 
         for sport in selected_sports:
             default = defaults.get(sport, 50)
-            total = len(self.sports_data[sport])
+
+            # Calculate matches in this sport
+            sport_leagues = self.sports_data[sport]
+
+            # If specific leagues were selected, count matches only in those leagues
+            if selected_leagues:
+                selected_set = set(l.lower() for l in selected_leagues)
+                available_matches = sum(
+                    len(matches) for league, matches in sport_leagues.items()
+                    if league.lower() in selected_set
+                )
+            else:
+                # All leagues: sum all matches in the sport
+                available_matches = sum(len(matches) for matches in sport_leagues.values())
 
             try:
-                user_input = input(f"  {sport.upper():15} (default: {default}, available: {total}): ").strip()
+                user_input = input(
+                    f"  {sport.upper():15} (suggested: {default}, available in selection: {available_matches}): "
+                ).strip()
                 if user_input == '':
                     limits[sport] = default
-                    print(f"    → Using default: {default}")
+                    print(f"    → Using suggested: {default}")
                 else:
                     limit = int(user_input)
                     if limit <= 0:
-                        print(f"    → Invalid (must be > 0), using default: {default}")
+                        print(f"    → Invalid (must be > 0), using suggested: {default}")
                         limits[sport] = default
+                    elif limit > available_matches:
+                        print(f"    → {limit} exceeds available ({available_matches}), will use all {available_matches}")
+                        limits[sport] = limit  # Will be capped later
                     else:
                         limits[sport] = limit
                         print(f"    → Set to: {limit}")
             except ValueError:
-                print(f"    → Invalid input, using default: {default}")
+                print(f"    → Invalid input, using suggested: {default}")
                 limits[sport] = default
 
         print(f"\n✅ Limits configured")
@@ -280,7 +299,7 @@ class InteractiveSelector:
         selected_leagues = self._show_league_selection(selected_sports)
 
         # Step 3: Limits configuration
-        limits = self._show_limits_configuration(selected_sports)
+        limits = self._show_limits_configuration(selected_sports, selected_leagues)
 
         # Step 4: Agents configuration
         agents = self._show_agents_configuration()
