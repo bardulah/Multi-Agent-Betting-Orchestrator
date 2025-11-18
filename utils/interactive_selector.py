@@ -60,11 +60,13 @@ class InteractiveSelector:
 
         sports = sorted(self.sports_data.keys())
 
-        # Create choices with match count info
+        # Create choices with league and match count info
         choices = []
         for sport in sports:
-            count = len(self.sports_data[sport])
-            choices.append(f"{sport.upper():15} ({count:2} matches)")
+            leagues = self.sports_data[sport]
+            league_count = len(leagues)
+            match_count = sum(len(matches) for matches in leagues.values())
+            choices.append(f"{sport.upper():15} ({league_count:2} leagues, {match_count:3} matches)")
 
         # Use checkbox for multi-select
         selected_choices = questionary.checkbox(

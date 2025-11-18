@@ -1,0 +1,27 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues:
+  - "EUROPE:\_Champions League"
+  - "EUROPE:\_Eurocup"
+  - "USA:\_NBA"
+  - "ENGLAND:\_Premier League Cup"
+  - "EUROPE:\_Euro U21 - Qualification"
+  - "EUROPE:\_World Cup - Qualification"
+  - "SLOVAKIA:\_Slovak Cup"
+  - "EUROPE:\_Champions League - Play Offs"
+  - "RUSSIA:\_KHL"
+  - "USA:\_NHL"
+  limits:
+    basketball: 15
+    football: 50
+    hockey: 20
+  name: Interactive Selection
+  sports:
+  - basketball
+  - football
+  - hockey
