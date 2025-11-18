@@ -1,13 +1,76 @@
 # Agent Handoff Document - ADK Project
 
-**Last Updated**: November 17, 2025 (Session 5 Complete - Dual Notifications Validated)
-**Status**: ✅ **PRODUCTION READY - FULL SYSTEM VALIDATED - 3-LAYER SYNTHESIS WORKING - DUAL NOTIFICATIONS OPERATIONAL**
-**Branch**: `feature/opportunity-agent`
-**Latest Achievement**: Dual notification channels (email + Telegram) fully operational with 217 matches analyzed and 107 BET recommendations generated
+**Last Updated**: November 18, 2025 (Session 6 Complete - Date-Specific Files & Dual-Scraper Integration)
+**Status**: ✅ **PRODUCTION READY - FULL SYSTEM VALIDATED - DATE-SPECIFIC FILE ARCHITECTURE COMPLETE**
+**Branch**: `feature/baseball-and-date-scraping`
+**Latest Achievement**: Dual-scraper architecture with date-specific files (today vs tomorrow) fully integrated with interactive mode
 
 ---
 
-## 🎯 Session 5: Full System Production Validation ⭐ LATEST - DUAL NOTIFICATIONS COMPLETE
+## 🎯 Session 6: Date-Specific Files & Dual-Scraper Integration ⭐ LATEST - COMPLETE
+
+### What Was Built (November 18, 2025)
+
+**Problem Identified**:
+- Single `data/matches.json` got overwritten when scraping different dates
+- No way to keep both today's and tomorrow's matches simultaneously
+- Interactive mode couldn't handle multiple date scenarios cleanly
+
+**Solution Implemented**:
+- ✅ Separate match files for each date: `data/matches.json` (today) vs `data/matches-tomorrow.json` (tomorrow)
+- ✅ Orchestrator intelligently routes scraped data to correct file
+- ✅ Interactive selector now date-aware and handles both files
+- ✅ No file overwrites when scraping different dates
+
+**Key Changes**:
+1. **Orchestrator** (`agents/orchestrator.py`) - +88 lines, -23 lines
+   - Added `get_matches_file_path(date)` method for intelligent file path resolution
+   - Updated `load_matches_from_file(date)` to load date-specific files
+   - Updated `run_scraper(date)` to save to date-specific files post-scrape
+   - Updated `run(date)` to thread date parameter throughout
+
+2. **Interactive Selector** (`utils/interactive_selector.py`) - +58 lines, -2 lines
+   - Added `date` parameter to constructor
+   - Added `_resolve_matches_file()` for smart file resolution
+   - Better error messages guiding users to correct scrape command
+
+3. **Scraper Config** (`scraper/package.json`) - +1 line
+   - Added `"scrape:future"` npm script
+
+4. **Future Scraper** (`scraper/src/flashscore-scraper-future.js`) - +5 lines, -1 line
+   - Auto-initializes with tomorrow's date
+
+**Testing Results**:
+- ✅ Today's football: 139 matches → `data/matches.json`
+- ✅ Tomorrow's football: 94 matches → `data/matches-tomorrow.json`
+- ✅ File path resolution verified
+- ✅ Interactive selector works with both dates
+- ✅ Error messages guide users appropriately
+
+**Documentation Created**:
+- ✅ `DATE_SPECIFIC_FILES_README.md` (6.7 KB) - Complete architecture guide
+- ✅ `SCRAPER_INTEGRATION_GUIDE.md` - Updated with file structure section
+
+**Usage**:
+```bash
+# Scrape and analyze today
+python3 run.py
+
+# Scrape and analyze tomorrow
+python3 run.py --date tomorrow
+
+# Interactive mode for today
+python3 run.py --interactive
+
+# Interactive mode for tomorrow
+python3 run.py --interactive --date tomorrow
+```
+
+**Backward Compatibility**: ✅ All changes backward compatible (defaults to today)
+
+---
+
+## 🎯 Session 5: Full System Production Validation - DUAL NOTIFICATIONS COMPLETE
 
 ### Part 3: Dual Notification Validation (54 minutes) ✅ FINAL - PRODUCTION READY
 
