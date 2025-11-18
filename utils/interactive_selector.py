@@ -11,16 +11,43 @@ from typing import Dict, List, Tuple
 class InteractiveSelector:
     """Interactive UI for selecting matches, leagues, and limits"""
 
-    def __init__(self, matches_file: str = 'data/matches.json'):
-        self.matches = self._load_matches(matches_file)
+    def __init__(self, matches_file: str = 'data/matches.json', date: str = 'today'):
+        self.date = date
+        # Try date-specific file first, fall back to generic
+        self.matches_file = self._resolve_matches_file(matches_file, date)
+        self.matches = self._load_matches(self.matches_file)
         self.sports_data = self._organize_by_sport()
+
+    def _resolve_matches_file(self, base_file: str, date: str) -> str:
+        """
+        Resolve the matches file path based on date.
+        Try date-specific file first, then fall back to base file.
+        """
+        base_path = Path(base_file)
+
+        if date.lower() == 'tomorrow':
+            # Try tomorrow-specific file first
+            date_specific = base_path.parent / f"{base_path.stem}-tomorrow.json"
+            if date_specific.exists():
+                return str(date_specific)
+        else:
+            # For 'today', use base file directly
+            if base_path.exists():
+                return str(base_path)
+
+        # Fallback to base file
+        return str(base_path)
 
     def _load_matches(self, matches_file: str) -> List[Dict]:
         """Load matches from JSON file"""
         path = Path(matches_file)
         if not path.exists():
             print(f"❌ Matches file not found: {matches_file}")
-            print("   Run the scraper first: npm run scrape")
+            print(f"   For {self.date} matches, run the scraper:")
+            if self.date.lower() == 'tomorrow':
+                print("   python3 run.py --date tomorrow")
+            else:
+                print("   python3 run.py")
             return []
 
         try:
@@ -270,6 +297,28 @@ class InteractiveSelector:
             print("❌ Analysis cancelled")
             return 0
 
+    def _show_date_info(self):
+        """Show information about available dates in current matches"""
+        if not self.matches:
+            return
+
+        self._print_section("📅 MATCH DATES IN CURRENT DATA")
+
+        # Extract unique dates from matches
+        dates = set()
+        for match in self.matches:
+            date = match.get('date', 'Unknown')
+            dates.add(date)
+
+        sorted_dates = sorted(dates)
+        if sorted_dates:
+            print(f"Available dates in data:")
+            for date in sorted_dates:
+                count = sum(1 for m in self.matches if m.get('date') == date)
+                print(f"  • {date}: {count} matches")
+        else:
+            print("No dates found in match data")
+
     def run_interactive_session(self) -> Dict:
         """Run full interactive selection session"""
         if not self.matches:
@@ -282,6 +331,9 @@ class InteractiveSelector:
         print("║" + "  Interactive Configuration for Match Analysis".center(58) + "║")
         print("║" + " "*58 + "║")
         print("╚" + "═"*58 + "╝")
+
+        # Show available dates info
+        self._show_date_info()
 
         # Step 1: Sport selection
         selected_sports = self._show_sport_selection()

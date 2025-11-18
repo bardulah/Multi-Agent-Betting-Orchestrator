@@ -12,7 +12,10 @@ class FlashscoreScraper {
     this.browser = null;
     this.page = null;
     this.matches = [];
-    this.scrapeDate = new Date().toISOString().split('T')[0];  // Track which date we're scraping
+    // Automatically set to tomorrow's date for this scraper
+    const tomorrow = new Date(Date.now() + 86400000);
+    this.scrapeDate = tomorrow.toISOString().split('T')[0];
+    console.log(`📅 Future scraper initialized for: ${this.scrapeDate}\n`);
   }
 
   setScrapeDateToTomorrow() {

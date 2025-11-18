@@ -70,40 +70,64 @@ class BettingSystemOrchestrator:
 
         self.logger.info("All agents initialized successfully")
 
-    def load_matches_from_file(self) -> List[Dict]:
+    def get_matches_file_path(self, date: str = 'today') -> Path:
+        """
+        Get the file path for matches based on date
+
+        Args:
+            date: 'today' or 'tomorrow'
+
+        Returns:
+            Path object for the date-specific matches file
+        """
+        base_file = self.config['storage']['matches_file']
+        base_path = Path(base_file)
+
+        if date.lower() == 'tomorrow':
+            # Insert '-tomorrow' before .json extension
+            return base_path.parent / f"{base_path.stem}-tomorrow.json"
+        else:
+            # Default to today's file (original path)
+            return base_path
+
+    def load_matches_from_file(self, date: str = 'today') -> List[Dict]:
         """
         Load matches from the pre-scraped JSON file (without re-scraping)
+
+        Args:
+            date: 'today' or 'tomorrow' to load date-specific file
 
         Returns:
             List of match dictionaries, or empty list if file not found
         """
         try:
-            matches_file = Path(self.config['storage']['matches_file'])
+            matches_file = self.get_matches_file_path(date)
             if matches_file.exists():
                 with open(matches_file, 'r') as f:
                     data = json.load(f)
                     matches = data.get('matches', [])
-                self.logger.info(f"Loaded {len(matches)} matches from existing file (no scraping)")
+                self.logger.info(f"Loaded {len(matches)} matches from {matches_file} (no scraping)")
                 return matches
             else:
-                self.logger.warning(f"Matches file not found: {matches_file}")
+                self.logger.info(f"Matches file not found: {matches_file}")
                 return []
         except Exception as e:
             self.logger.error(f"Error loading matches from file: {e}")
             return []
 
-    def run_scraper(self, sports: List[str] = None) -> List[Dict]:
+    def run_scraper(self, sports: List[str] = None, date: str = 'today') -> List[Dict]:
         """
         Run the Node.js scraper to get match data
 
         Args:
             sports: Optional list of sports to scrape (e.g., ['football', 'tennis'])
                    If None, scrapes all sports. This allows filtering to only needed sports.
+            date: Which date to scrape ('today' or 'tomorrow'). Defaults to 'today'.
 
         Returns:
             List of match dictionaries
         """
-        self.logger.info("Running Flashscore scraper...")
+        self.logger.info(f"Running Flashscore scraper for {date}'s matches...")
 
         try:
             # Check if node_modules exists
@@ -119,8 +143,19 @@ class BettingSystemOrchestrator:
                     capture_output=True
                 )
 
+            # Choose npm script based on date
+            if date.lower() == 'tomorrow':
+                scraper_script = 'scrape:future'
+                self.logger.info("📅 Using tomorrow's scraper (flashscore-scraper-future.js)")
+            else:
+                scraper_script = 'scrape'
+                self.logger.info("📅 Using today's scraper (flashscore-scraper.js)")
+
+            # Get the target file path for this date
+            target_matches_file = self.get_matches_file_path(date)
+
             # Build scraper command with optional sport filtering
-            scraper_cmd = ['npm', 'run', 'scrape']
+            scraper_cmd = ['npm', 'run', scraper_script]
             if sports:
                 sports_str = ','.join(sports)
                 scraper_cmd.append('--')
@@ -140,14 +175,22 @@ class BettingSystemOrchestrator:
             self.logger.info("Scraper completed successfully")
             self.logger.debug(f"Scraper output: {result.stdout}")
 
-            # Load scraped data
-            matches_file = Path(self.config['storage']['matches_file'])
-            if matches_file.exists():
-                with open(matches_file, 'r') as f:
+            # Load scraped data from default location and move to date-specific file
+            default_matches_file = Path(self.config['storage']['matches_file'])
+            if default_matches_file.exists():
+                with open(default_matches_file, 'r') as f:
                     data = json.load(f)
                     matches = data.get('matches', [])
-                    self.logger.info(f"Loaded {len(matches)} matches from scraper")
-                    return matches
+
+                # If using a date-specific file (tomorrow), move/copy the data there
+                if target_matches_file != default_matches_file:
+                    target_matches_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(target_matches_file, 'w') as f:
+                        json.dump(data, f, indent=2)
+                    self.logger.info(f"Saved {len(matches)} matches to {target_matches_file}")
+
+                self.logger.info(f"Loaded {len(matches)} matches from scraper")
+                return matches
             else:
                 self.logger.error("Matches file not found after scraping")
                 return []
@@ -444,12 +487,13 @@ class BettingSystemOrchestrator:
 
         return filtered
 
-    def run(self, filter_path: str = None):
+    def run(self, filter_path: str = None, date: str = 'today'):
         """
         Main execution method
 
         Args:
             filter_path: Optional path to filter configuration file
+            date: Which date to scrape ('today' or 'tomorrow'). Defaults to 'today'.
         """
         self.logger.info("=" * 60)
         self.logger.info("Starting Multi-Agent Betting System")
@@ -463,7 +507,7 @@ class BettingSystemOrchestrator:
             self.logger.info("\n[STEP 1] Loading match data...")
 
             # Try to load from existing file first (avoids unnecessary scraping)
-            all_matches = self.load_matches_from_file()
+            all_matches = self.load_matches_from_file(date=date)
 
             # If no pre-scraped data exists, run the scraper
             if not all_matches:
@@ -472,10 +516,10 @@ class BettingSystemOrchestrator:
                 selected_sports = filter_config.get('sports', [])
                 if selected_sports:
                     self.logger.info(f"Scraping only selected sports: {selected_sports}")
-                    all_matches = self.run_scraper(sports=selected_sports)
+                    all_matches = self.run_scraper(sports=selected_sports, date=date)
                 else:
                     self.logger.info("No sport filter specified, scraping all sports...")
-                    all_matches = self.run_scraper()
+                    all_matches = self.run_scraper(date=date)
 
             if not all_matches:
                 self.logger.warning("No matches found. Exiting.")
@@ -552,6 +596,12 @@ def main():
         action='store_true',
         help='Send a test notification and exit'
     )
+    parser.add_argument(
+        '--date',
+        default='today',
+        choices=['today', 'tomorrow'],
+        help='Which date to scrape matches for (default: today)'
+    )
 
     args = parser.parse_args()
 
@@ -573,7 +623,7 @@ def main():
     # Launch interactive mode only if explicitly requested
     if args.interactive:
         from utils.interactive_selector import InteractiveSelector
-        selector = InteractiveSelector()
+        selector = InteractiveSelector(date=args.date)
         filter_config = selector.run_interactive_session()
 
         if filter_config:
@@ -588,7 +638,7 @@ def main():
             print("❌ No configuration selected. Exiting.")
             return
 
-    orchestrator.run(filter_path=filter_path)
+    orchestrator.run(filter_path=filter_path, date=args.date)
 
 
 if __name__ == '__main__':

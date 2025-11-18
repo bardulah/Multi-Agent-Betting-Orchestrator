@@ -5,6 +5,7 @@
   "main": "src/flashscore-scraper.js",
   "scripts": {
     "scrape": "node src/flashscore-scraper.js",
+    "scrape:future": "node src/flashscore-scraper-future.js",
     "scrape:date": "node src/scrape-with-date.js",
     "analyze-opportunities": "node analyze-opportunities.js",
     "telegram-bot": "node src/telegramBot.js",
