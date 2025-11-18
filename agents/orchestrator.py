@@ -92,9 +92,13 @@ class BettingSystemOrchestrator:
             self.logger.error(f"Error loading matches from file: {e}")
             return []
 
-    def run_scraper(self) -> List[Dict]:
+    def run_scraper(self, sports: List[str] = None) -> List[Dict]:
         """
         Run the Node.js scraper to get match data
+
+        Args:
+            sports: Optional list of sports to scrape (e.g., ['football', 'tennis'])
+                   If None, scrapes all sports. This allows filtering to only needed sports.
 
         Returns:
             List of match dictionaries
@@ -115,9 +119,18 @@ class BettingSystemOrchestrator:
                     capture_output=True
                 )
 
+            # Build scraper command with optional sport filtering
+            scraper_cmd = ['npm', 'run', 'scrape']
+            if sports:
+                sports_str = ','.join(sports)
+                scraper_cmd.append('--')
+                scraper_cmd.append('--sports')
+                scraper_cmd.append(sports_str)
+                self.logger.info(f"Scraping only selected sports: {sports_str}")
+
             # Run the scraper
             result = subprocess.run(
-                ['npm', 'run', 'scrape'],
+                scraper_cmd,
                 cwd=scraper_dir,
                 check=True,
                 capture_output=True,
@@ -455,7 +468,14 @@ class BettingSystemOrchestrator:
             # If no pre-scraped data exists, run the scraper
             if not all_matches:
                 self.logger.info("No pre-scraped matches found, running scraper...")
-                all_matches = self.run_scraper()
+                # Get selected sports from filter to optimize scraping
+                selected_sports = filter_config.get('sports', [])
+                if selected_sports:
+                    self.logger.info(f"Scraping only selected sports: {selected_sports}")
+                    all_matches = self.run_scraper(sports=selected_sports)
+                else:
+                    self.logger.info("No sport filter specified, scraping all sports...")
+                    all_matches = self.run_scraper()
 
             if not all_matches:
                 self.logger.warning("No matches found. Exiting.")
