@@ -47,16 +47,31 @@ class NotificationAgent:
 
         logger.info(f"Sending notifications for {len(bets)} betting recommendations")
 
-        success = True
-        if self.method in ['email', 'both']:
-            success = success and self._send_email(bets)
+        # Group bets by sport
+        bets_by_sport = self._group_by_sport(bets)
 
-        if self.method in ['telegram', 'both']:
-            success = success and self._send_telegram(bets)
+        success = True
+        for sport in sorted(bets_by_sport.keys()):
+            sport_bets = bets_by_sport[sport]
+            if self.method in ['email', 'both']:
+                success = success and self._send_email(sport_bets, sport)
+
+            if self.method in ['telegram', 'both']:
+                success = success and self._send_telegram(sport_bets, sport)
 
         return success
 
-    def _send_email(self, bets: List[Dict]) -> bool:
+    def _group_by_sport(self, bets: List[Dict]) -> Dict[str, List[Dict]]:
+        """Group bets by sport"""
+        grouped = {}
+        for bet in bets:
+            sport = bet.get('sport', 'unknown')
+            if sport not in grouped:
+                grouped[sport] = []
+            grouped[sport].append(bet)
+        return grouped
+
+    def _send_email(self, bets: List[Dict], sport: str = None) -> bool:
         """Send email notification"""
         try:
             email_config = self.config.get('notifications', {}).get('email', {})
@@ -70,15 +85,18 @@ class NotificationAgent:
                 logger.warning("Email configuration incomplete, skipping email notification")
                 return False
 
-            # Create message
+            # Create message with sport-specific subject
             message = MIMEMultipart('alternative')
-            message['Subject'] = f"Betting Recommendations - {datetime.now().strftime('%Y-%m-%d')}"
+            if sport:
+                message['Subject'] = f"🎯 {sport.upper()} Betting Recommendations - {datetime.now().strftime('%Y-%m-%d')}"
+            else:
+                message['Subject'] = f"Betting Recommendations - {datetime.now().strftime('%Y-%m-%d')}"
             message['From'] = sender_email
             message['To'] = recipient_email
 
             # Create email body
-            text_body = self._create_text_email_body(bets)
-            html_body = self._create_html_email_body(bets)
+            text_body = self._create_text_email_body(bets, sport)
+            html_body = self._create_html_email_body(bets, sport)
 
             text_part = MIMEText(text_body, 'plain')
             html_part = MIMEText(html_body, 'html')
@@ -92,14 +110,15 @@ class NotificationAgent:
                 server.login(sender_email, sender_password)
                 server.send_message(message)
 
-            logger.info(f"Email sent successfully to {recipient_email}")
+            sport_str = f" ({sport})" if sport else ""
+            logger.info(f"Email sent successfully{sport_str} to {recipient_email}")
             return True
 
         except Exception as e:
             logger.error(f"Failed to send email: {e}")
             return False
 
-    def _send_telegram(self, bets: List[Dict]) -> bool:
+    def _send_telegram(self, bets: List[Dict], sport: str = None) -> bool:
         """Send Telegram notification"""
         try:
             telegram_config = self.config.get('notifications', {}).get('telegram', {})
@@ -111,7 +130,7 @@ class NotificationAgent:
                 return False
 
             # Create message
-            message = self._create_telegram_message(bets)
+            message = self._create_telegram_message(bets, sport)
 
             # Send via Telegram Bot API
             import requests
@@ -125,17 +144,19 @@ class NotificationAgent:
             response = requests.post(url, data=data, timeout=10)
             response.raise_for_status()
 
-            logger.info(f"Telegram message sent successfully to chat {chat_id}")
+            sport_str = f" ({sport})" if sport else ""
+            logger.info(f"Telegram message sent successfully{sport_str} to chat {chat_id}")
             return True
 
         except Exception as e:
             logger.error(f"Failed to send Telegram message: {e}")
             return False
 
-    def _create_text_email_body(self, bets: List[Dict]) -> str:
+    def _create_text_email_body(self, bets: List[Dict], sport: str = None) -> str:
         """Create plain text email body"""
+        sport_str = f" - {sport.upper()}" if sport else ""
         lines = [
-            f"Betting Recommendations - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            f"Betting Recommendations{sport_str} - {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             "=" * 60,
             "",
             f"Total Recommendations: {len(bets)}",
@@ -201,8 +222,9 @@ class NotificationAgent:
 
         return "\n".join(lines)
 
-    def _create_html_email_body(self, bets: List[Dict]) -> str:
+    def _create_html_email_body(self, bets: List[Dict], sport: str = None) -> str:
         """Create HTML email body"""
+        sport_title = f" - {sport.upper()}" if sport else ""
         html = f"""
         <html>
         <head>
@@ -226,7 +248,7 @@ class NotificationAgent:
             </style>
         </head>
         <body>
-            <h1>🎯 Betting Recommendations</h1>
+            <h1>🎯 Betting Recommendations{sport_title}</h1>
             <p><strong>Date:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
             <p><strong>Total Recommendations:</strong> {len(bets)}</p>
         """
@@ -298,51 +320,43 @@ class NotificationAgent:
 
         return html
 
-    def _create_telegram_message(self, bets: List[Dict]) -> str:
-        """Create Telegram message"""
+    def _create_telegram_message(self, bets: List[Dict], sport: str = None) -> str:
+        """Create Telegram message (concise format for per-sport messages)"""
+        sport_title = f" - {sport.upper()}" if sport else ""
         lines = [
-            f"🎯 <b>Betting Recommendations</b>",
+            f"🎯 <b>Betting Recommendations{sport_title}</b>",
             f"📅 {datetime.now().strftime('%Y-%m-%d %H:%M')}",
             f"",
-            f"<b>Total: {len(bets)} recommendations</b>",
-            ""
         ]
 
         for i, bet in enumerate(bets, 1):
             confidence_emoji = "🟢" if bet.get('confidence', 0) > 0.7 else "🟡" if bet.get('confidence', 0) > 0.5 else "🔴"
 
+            # Concise format - just key info per bet
             lines.extend([
-                f"<b>BET #{i}</b>",
-                f"⚽ {bet['homeTeam']} vs {bet['awayTeam']}",
-                f"🏆 {bet['sport']} | {bet.get('league', 'Unknown')}",
-                f""
+                f"<b>#{i}</b> {bet['homeTeam']} vs {bet['awayTeam']}",
+                f"🏆 {bet.get('league', 'Unknown')}",
             ])
 
-            # Internet Picks layer (concise for Telegram)
+            # Show picks from different layers very concisely
+            picks_summary = []
             if bet.get('internet_picks'):
                 internet = bet['internet_picks']
-                lines.append(f"🌐 Internet: {', '.join(internet.get('picks', []))} ({internet.get('confidence', 0.0):.0%})")
+                picks_summary.append(f"🌐 {', '.join(internet.get('picks', [])[:1])}")  # Just first pick
 
-            # Data-Driven layer (concise for Telegram)
             if bet.get('data_driven'):
                 data_driven = bet['data_driven']
-                lines.append(f"📊 Data-Driven: {', '.join(data_driven.get('picks', []))} ({data_driven.get('confidence', 0.0):.0%})")
+                picks_summary.append(f"📊 {', '.join(data_driven.get('picks', [])[:1])}")  # Just first pick
 
             # Final pick
-            lines.extend([
-                f"",
-                f"✅ <b>Final Pick:</b> {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')}",
-                f"{confidence_emoji} <b>Confidence:</b> {bet.get('confidence', 0.0):.0%} | Agreement: {bet.get('agreement_score', 0.0):.0%}",
-                f"",
-                f"💭 {bet.get('reasoning', 'No reasoning')[:150]}",
-                f"",
-                "➖" * 20,
-                ""
-            ])
+            lines.append(f"✅ <b>Final:</b> {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')} {confidence_emoji}")
+            if picks_summary:
+                lines.append(f"   {' | '.join(picks_summary)}")
+
+            lines.append("")
 
         lines.extend([
-            "",
-            "⚠️ <i>Automated recommendations. DYOR. Bet responsibly.</i>"
+            "⚠️ <i>DYOR. Bet responsibly.</i>"
         ])
 
         return "\n".join(lines)
