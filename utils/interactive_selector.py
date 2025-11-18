@@ -153,12 +153,9 @@ class InteractiveSelector:
             'hockey': 20
         }
 
-        print("Set maximum matches to analyze per sport:")
-        print("(Press Enter to use default, or enter a number)\n")
+        print("Set maximum matches to analyze per sport (or press Enter to analyze all):\n")
 
         for sport in selected_sports:
-            default = defaults.get(sport, 50)
-
             # Calculate matches in this sport
             sport_leagues = self.sports_data[sport]
 
@@ -174,26 +171,22 @@ class InteractiveSelector:
                 available_matches = sum(len(matches) for matches in sport_leagues.values())
 
             try:
-                user_input = input(
-                    f"  {sport.upper():15} (suggested: {default}, available in selection: {available_matches}): "
-                ).strip()
+                user_input = input(f"  {sport.upper():15} ({available_matches} available): ").strip()
                 if user_input == '':
-                    limits[sport] = default
-                    print(f"    → Using suggested: {default}")
+                    limits[sport] = available_matches  # Analyze all by default
+                    print(f"    → Analyzing all {available_matches}")
                 else:
                     limit = int(user_input)
                     if limit <= 0:
-                        print(f"    → Invalid (must be > 0), using suggested: {default}")
-                        limits[sport] = default
-                    elif limit > available_matches:
-                        print(f"    → {limit} exceeds available ({available_matches}), will use all {available_matches}")
-                        limits[sport] = limit  # Will be capped later
+                        print(f"    → Invalid (must be > 0), analyzing all {available_matches}")
+                        limits[sport] = available_matches
                     else:
                         limits[sport] = limit
-                        print(f"    → Set to: {limit}")
+                        actual_limit = min(limit, available_matches)
+                        print(f"    → Set to: {actual_limit}")
             except ValueError:
-                print(f"    → Invalid input, using suggested: {default}")
-                limits[sport] = default
+                print(f"    → Invalid input, analyzing all {available_matches}")
+                limits[sport] = available_matches
 
         print(f"\n✅ Limits configured")
         return limits
