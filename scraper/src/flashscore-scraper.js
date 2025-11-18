@@ -456,9 +456,8 @@ class FlashscoreScraper {
 
         const elements = document.querySelectorAll(selector);
         const results = [];
-        const maxMatches = Math.min(elements.length, 20);
 
-        for (let i = 0; i < maxMatches; i++) {
+        for (let i = 0; i < elements.length; i++) {
           const el = elements[i];
 
           try {
@@ -819,9 +818,8 @@ class FlashscoreScraper {
         let elements = document.querySelectorAll(selector);
 
         const results = [];
-        const maxMatches = Math.min(elements.length, 50);
 
-        for (let i = 0; i < maxMatches; i++) {
+        for (let i = 0; i < elements.length; i++) {
           const el = elements[i];
 
           try {
