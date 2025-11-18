@@ -70,6 +70,28 @@ class BettingSystemOrchestrator:
 
         self.logger.info("All agents initialized successfully")
 
+    def load_matches_from_file(self) -> List[Dict]:
+        """
+        Load matches from the pre-scraped JSON file (without re-scraping)
+
+        Returns:
+            List of match dictionaries, or empty list if file not found
+        """
+        try:
+            matches_file = Path(self.config['storage']['matches_file'])
+            if matches_file.exists():
+                with open(matches_file, 'r') as f:
+                    data = json.load(f)
+                    matches = data.get('matches', [])
+                self.logger.info(f"Loaded {len(matches)} matches from existing file (no scraping)")
+                return matches
+            else:
+                self.logger.warning(f"Matches file not found: {matches_file}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error loading matches from file: {e}")
+            return []
+
     def run_scraper(self) -> List[Dict]:
         """
         Run the Node.js scraper to get match data
@@ -424,9 +446,16 @@ class BettingSystemOrchestrator:
         filter_config = self.load_filter_config(filter_path)
 
         try:
-            # Step 1: Scrape matches
-            self.logger.info("\n[STEP 1] Scraping matches from Flashscore...")
-            all_matches = self.run_scraper()
+            # Step 1: Load or scrape matches
+            self.logger.info("\n[STEP 1] Loading match data...")
+
+            # Try to load from existing file first (avoids unnecessary scraping)
+            all_matches = self.load_matches_from_file()
+
+            # If no pre-scraped data exists, run the scraper
+            if not all_matches:
+                self.logger.info("No pre-scraped matches found, running scraper...")
+                all_matches = self.run_scraper()
 
             if not all_matches:
                 self.logger.warning("No matches found. Exiting.")
