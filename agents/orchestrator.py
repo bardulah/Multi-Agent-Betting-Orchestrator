@@ -228,13 +228,62 @@ class BettingSystemOrchestrator:
 
         # Run synthesis agent (3-layer: Internet Picks + Data-Driven → Synthesis)
         self.logger.info("Running synthesis agent (3-layer analysis)...")
-        recommendations = self.synthesis_agent.process_matches(
+        synthesis_recommendations = self.synthesis_agent.process_matches(
             matches,
             internet_picks_results,
             data_driven_results
         )
 
+        # Enhance recommendations with individual agent results (all 3 layers)
+        recommendations = self._enhance_recommendations_with_all_layers(
+            synthesis_recommendations,
+            internet_picks_results,
+            data_driven_results
+        )
+
         return recommendations
+
+    def _enhance_recommendations_with_all_layers(self, synthesis_recs: List[Dict],
+                                                  internet_picks: List[Dict],
+                                                  data_driven: List[Dict]) -> List[Dict]:
+        """
+        Enhance recommendations by including all 3 layers of agent analysis.
+
+        Args:
+            synthesis_recs: Final synthesis recommendations
+            internet_picks: Internet Picks agent results
+            data_driven: Data-Driven agent results
+
+        Returns:
+            Enhanced recommendations with all layers
+        """
+        # Create lookup maps for quick access
+        internet_map = {r.get('match_id'): r for r in internet_picks}
+        data_driven_map = {r.get('match_id'): r for r in data_driven}
+
+        # Enhance each synthesis recommendation with individual layer results
+        for rec in synthesis_recs:
+            match_id = rec.get('match_id')
+
+            # Add Internet Picks layer
+            if match_id in internet_map:
+                internet_data = internet_map[match_id]
+                rec['internet_picks'] = {
+                    'picks': internet_data.get('picks', []),
+                    'confidence': internet_data.get('confidence', 0.0),
+                    'analysis': internet_data.get('analysis', '')
+                }
+
+            # Add Data-Driven layer
+            if match_id in data_driven_map:
+                data_driven_data = data_driven_map[match_id]
+                rec['data_driven'] = {
+                    'picks': data_driven_data.get('picks', []),
+                    'confidence': data_driven_data.get('confidence', 0.0),
+                    'analysis': data_driven_data.get('analysis', '')
+                }
+
+        return synthesis_recs
 
     def save_results(self, recommendations: List[Dict]):
         """

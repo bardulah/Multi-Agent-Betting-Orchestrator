@@ -257,8 +257,16 @@ Provide your final decision in JSON format.
                 'reasoning': decision.get('reasoning', result_text[:600]),
                 'value_assessment': decision.get('value_assessment', ''),
                 'agreement_score': decision.get('agreement_score', 0.0),
-                'internet_picks_summary': internet_picks.get('summary', ''),
-                'data_driven_summary': data_driven.get('analysis', ''),
+                'internet_picks': {
+                    'picks': internet_picks.get('picks', []),
+                    'confidence': internet_picks.get('confidence', 0.0),
+                    'analysis': internet_picks.get('summary', internet_picks.get('analysis', ''))
+                },
+                'data_driven': {
+                    'picks': data_driven.get('picks', []),
+                    'confidence': data_driven.get('confidence', 0.0),
+                    'analysis': data_driven.get('analysis', '')
+                },
                 'odds_available': len(match.get('odds', {})) > 0
             }
 

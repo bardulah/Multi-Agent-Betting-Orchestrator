@@ -150,13 +150,39 @@ class NotificationAgent:
                 f"Sport: {bet['sport']} | League: {bet.get('league', 'Unknown')}",
                 f"Time: {bet.get('time', 'TBD')}",
                 f"",
-                f"Recommended Pick: {bet.get('recommended_pick', 'N/A')}",
-                f"Odds: {bet.get('recommended_odds', 'N/A')}",
-                f"Confidence: {bet.get('confidence', 0.0):.2f}",
-                f"Agreement Score: {bet.get('agreement_score', 0.0):.2f}",
+            ])
+
+            # Add all 3 layers of picks
+            if bet.get('internet_picks'):
+                internet = bet['internet_picks']
+                lines.extend([
+                    f"🌐 INTERNET PICKS (Community consensus)",
+                    f"   Picks: {', '.join(internet.get('picks', []))}",
+                    f"   Confidence: {internet.get('confidence', 0.0):.1%}",
+                    f"   Analysis: {internet.get('analysis', 'N/A')}",
+                    f""
+                ])
+
+            if bet.get('data_driven'):
+                data_driven = bet['data_driven']
+                lines.extend([
+                    f"📊 DATA-DRIVEN (Statistical analysis)",
+                    f"   Picks: {', '.join(data_driven.get('picks', []))}",
+                    f"   Confidence: {data_driven.get('confidence', 0.0):.1%}",
+                    f"   Analysis: {data_driven.get('analysis', 'N/A')}",
+                    f""
+                ])
+
+            # Final synthesis recommendation
+            lines.extend([
+                f"🎯 FINAL RECOMMENDATION (3-Layer Synthesis)",
+                f"   Pick: {bet.get('recommended_pick', 'N/A').upper()}",
+                f"   Odds Target: {bet.get('recommended_odds', 'N/A')}",
+                f"   Confidence: {bet.get('confidence', 0.0):.1%}",
+                f"   Agreement Score: {bet.get('agreement_score', 0.0):.1%}",
                 f"",
-                f"Reasoning:",
-                bet.get('reasoning', 'No reasoning provided')[:300],
+                f"Detailed Reasoning:",
+                bet.get('reasoning', 'No reasoning provided'),
                 f"",
                 f"Value Assessment:",
                 bet.get('value_assessment', 'N/A'),
@@ -217,20 +243,46 @@ class NotificationAgent:
                 <div class="meta">
                     {bet['sport']} | {bet.get('league', 'Unknown')} | {bet.get('time', 'TBD')}
                 </div>
-                <p class="pick">
-                    ✅ Pick: {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')}
-                </p>
-                <p>
-                    <span class="confidence" style="color: {confidence_color};">
-                        Confidence: {bet.get('confidence', 0.0):.2%}
-                    </span>
-                    | Agreement: {bet.get('agreement_score', 0.0):.2%}
-                </p>
-                <div class="reasoning">
-                    <strong>Reasoning:</strong><br>
-                    {bet.get('reasoning', 'No reasoning provided')[:400]}
+            """
+
+            # Add Internet Picks layer
+            if bet.get('internet_picks'):
+                internet = bet['internet_picks']
+                picks_html = ', '.join(internet.get('picks', []))
+                html += f"""
+                <div style="border-left: 4px solid #3498db; padding: 10px; margin: 10px 0; background-color: #d6eaf8;">
+                    <strong>🌐 Internet Picks (Community)</strong><br>
+                    <strong>Picks:</strong> {picks_html}<br>
+                    <strong>Confidence:</strong> {internet.get('confidence', 0.0):.1%}<br>
+                    <strong>Analysis:</strong> {internet.get('analysis', 'N/A')[:500]}
                 </div>
-                <p><strong>Value:</strong> {bet.get('value_assessment', 'N/A')}</p>
+                """
+
+            # Add Data-Driven layer
+            if bet.get('data_driven'):
+                data_driven = bet['data_driven']
+                picks_html = ', '.join(data_driven.get('picks', []))
+                html += f"""
+                <div style="border-left: 4px solid #e74c3c; padding: 10px; margin: 10px 0; background-color: #fadbd8;">
+                    <strong>📊 Data-Driven (Statistical)</strong><br>
+                    <strong>Picks:</strong> {picks_html}<br>
+                    <strong>Confidence:</strong> {data_driven.get('confidence', 0.0):.1%}<br>
+                    <strong>Analysis:</strong> {data_driven.get('analysis', 'N/A')[:500]}
+                </div>
+                """
+
+            # Final synthesis recommendation
+            html += f"""
+                <div style="border-left: 4px solid #27ae60; padding: 10px; margin: 10px 0; background-color: #d5f4e6;">
+                    <strong>🎯 Final Recommendation (3-Layer Synthesis)</strong><br>
+                    <span class="pick">Pick: {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')}</span><br>
+                    <span class="confidence" style="color: {confidence_color};">Confidence: {bet.get('confidence', 0.0):.1%}</span> | Agreement: {bet.get('agreement_score', 0.0):.1%}
+                </div>
+                <div class="reasoning">
+                    <strong>Detailed Reasoning:</strong><br>
+                    {bet.get('reasoning', 'No reasoning provided')}
+                </div>
+                <p><strong>Value Assessment:</strong> {bet.get('value_assessment', 'N/A')}</p>
             </div>
             """
 
@@ -263,12 +315,26 @@ class NotificationAgent:
                 f"<b>BET #{i}</b>",
                 f"⚽ {bet['homeTeam']} vs {bet['awayTeam']}",
                 f"🏆 {bet['sport']} | {bet.get('league', 'Unknown')}",
+                f""
+            ])
+
+            # Internet Picks layer (concise for Telegram)
+            if bet.get('internet_picks'):
+                internet = bet['internet_picks']
+                lines.append(f"🌐 Internet: {', '.join(internet.get('picks', []))} ({internet.get('confidence', 0.0):.0%})")
+
+            # Data-Driven layer (concise for Telegram)
+            if bet.get('data_driven'):
+                data_driven = bet['data_driven']
+                lines.append(f"📊 Data-Driven: {', '.join(data_driven.get('picks', []))} ({data_driven.get('confidence', 0.0):.0%})")
+
+            # Final pick
+            lines.extend([
                 f"",
-                f"✅ <b>Pick:</b> {bet.get('recommended_pick', 'N/A').upper()}",
-                f"💰 <b>Odds:</b> {bet.get('recommended_odds', 'N/A')}",
-                f"{confidence_emoji} <b>Confidence:</b> {bet.get('confidence', 0.0):.0%}",
+                f"✅ <b>Final Pick:</b> {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')}",
+                f"{confidence_emoji} <b>Confidence:</b> {bet.get('confidence', 0.0):.0%} | Agreement: {bet.get('agreement_score', 0.0):.0%}",
                 f"",
-                f"📊 {bet.get('reasoning', 'No reasoning')[:200]}...",
+                f"💭 {bet.get('reasoning', 'No reasoning')[:150]}",
                 f"",
                 "➖" * 20,
                 ""
