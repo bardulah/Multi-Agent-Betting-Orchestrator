@@ -772,7 +772,7 @@ Returning to settings menu..."""
         logger.error(f"Exception while handling an update: {context.error}")
 
 
-async def main():
+def main():
     """Start the Telegram bot"""
     logger.info("Starting Telegram Bot...")
 
@@ -794,26 +794,17 @@ async def main():
 
     # Start the bot
     logger.info("Telegram bot is running. Press Ctrl+C to stop.")
-    await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-
-def run_bot():
-    """Run the bot with proper event loop handling"""
-    try:
-        # Try to get the existing event loop
-        try:
-            loop = asyncio.get_running_loop()
-            # If we get here, we're already in an async context
-            logger.error("Cannot run bot in existing event loop. Use 'asyncio.run(main())' or run as standalone script")
-            return False
-        except RuntimeError:
-            # No running loop, safe to create one
-            asyncio.run(main())
-            return True
-    except KeyboardInterrupt:
-        logger.info("Bot stopped by user")
-        sys.exit(0)
+    # Run the bot using the built-in run_polling method
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    run_bot()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Bot error: {e}")
+        sys.exit(1)
