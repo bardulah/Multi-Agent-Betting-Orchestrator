@@ -1,0 +1,305 @@
+#!/usr/bin/env python3
+"""
+Telegram Bot for Multi-Agent Betting System
+Provides mobile access to betting analysis via Telegram
+"""
+
+import os
+import sys
+import asyncio
+import logging
+from pathlib import Path
+from typing import Optional
+
+# Add current directory to path
+sys.path.insert(0, os.path.dirname(__file__))
+
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+    CallbackQueryHandler,
+)
+from dotenv import load_dotenv
+from agents.utils.logging_config import get_logger
+
+# Setup logging
+logger = get_logger(__name__)
+
+# Load environment variables
+load_dotenv('config/.env')
+
+
+class BettingBotHandler:
+    """Handle Telegram bot interactions"""
+
+    def __init__(self):
+        """Initialize bot handler"""
+        self.token = os.getenv('TELEGRAM_BOT_TOKEN')
+        if not self.token:
+            raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
+
+        logger.info("Telegram Bot Handler initialized")
+
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /start command - show welcome message and main menu"""
+        user = update.effective_user
+        logger.info(f"User {user.id} ({user.first_name}) started bot")
+
+        welcome_text = """🎯 Welcome to Multi-Agent Betting System!
+
+I can help you:
+• 📊 View betting recommendations
+• 🔍 Trigger new analysis
+• 🏆 Filter by sport
+• ⚙️ Manage settings
+
+Select an action below to get started:"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Show Results", callback_data="show_today"),
+                InlineKeyboardButton("🔍 Analyze", callback_data="analyze"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ Settings", callback_data="settings"),
+                InlineKeyboardButton("❓ Help", callback_data="help"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await update.message.reply_text(
+            welcome_text,
+            reply_markup=reply_markup,
+            parse_mode="HTML"
+        )
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /help command - show available commands"""
+        user = update.effective_user
+        logger.info(f"User {user.id} requested help")
+
+        help_text = """📖 <b>Available Commands</b>
+
+<b>Main Commands:</b>
+/start - Show main menu
+/analyze - Trigger new analysis
+/show - View recommendations
+/filter - Filter by sport
+/settings - Configure preferences
+/help - Show this message
+
+<b>Quick Examples:</b>
+/analyze - Run analysis on all sports
+/show today - Show today's recommendations
+/show tomorrow - Show tomorrow's recommendations
+/filter football - Show only football bets
+/settings - Adjust confidence threshold
+
+<b>Interactive Navigation:</b>
+Use the buttons that appear in messages for easy navigation on mobile."""
+
+        await update.message.reply_text(help_text, parse_mode="HTML")
+
+    async def help_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle help button from main menu"""
+        query = update.callback_query
+        await query.answer()
+
+        help_text = """📖 <b>Available Commands</b>
+
+<b>Main Commands:</b>
+/start - Show main menu
+/analyze - Trigger new analysis
+/show - View recommendations
+/filter - Filter by sport
+/settings - Configure preferences
+/help - Show this message
+
+<b>Quick Examples:</b>
+/analyze - Run analysis on all sports
+/show today - Show today's recommendations
+/show tomorrow - Show tomorrow's recommendations
+/filter football - Show only football bets
+
+<b>Interactive Navigation:</b>
+Use the buttons that appear in messages for easy navigation."""
+
+        keyboard = [
+            [InlineKeyboardButton("◀️ Back to Menu", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(help_text, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def start_menu_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle back to menu button"""
+        query = update.callback_query
+        await query.answer()
+
+        welcome_text = """🎯 <b>Multi-Agent Betting System</b>
+
+Select an action below:"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton("📊 Show Results", callback_data="show_today"),
+                InlineKeyboardButton("🔍 Analyze", callback_data="analyze"),
+            ],
+            [
+                InlineKeyboardButton("⚙️ Settings", callback_data="settings"),
+                InlineKeyboardButton("❓ Help", callback_data="help"),
+            ],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(welcome_text, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle callback query (button press)"""
+        query = update.callback_query
+        callback_data = query.data
+
+        logger.info(f"Button pressed: {callback_data}")
+
+        # Route to appropriate handler
+        if callback_data == "help":
+            await self.help_callback(update, context)
+        elif callback_data == "start_menu":
+            await self.start_menu_callback(update, context)
+        elif callback_data == "show_today":
+            await self.show_results_callback(update, context, "today")
+        elif callback_data == "analyze":
+            await self.analyze_callback(update, context)
+        elif callback_data == "settings":
+            await self.settings_callback(update, context)
+        else:
+            await query.answer("Command not yet implemented", show_alert=False)
+
+    async def show_results_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, date: str = "today"
+    ) -> None:
+        """Handle showing results"""
+        query = update.callback_query
+        await query.answer()
+
+        # Placeholder for now
+        message = f"""📊 <b>Recommendations for {date.upper()}</b>
+
+<i>Loading results...</i>
+
+(This feature is being implemented)"""
+
+        keyboard = [
+            [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def analyze_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle analyze button"""
+        query = update.callback_query
+        await query.answer()
+
+        message = """🔍 <b>Trigger Analysis</b>
+
+<i>Analysis feature is being implemented</i>
+
+Available options:
+• Analyze all sports
+• Analyze specific sport
+• Set match limit"""
+
+        keyboard = [
+            [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def settings_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle settings button"""
+        query = update.callback_query
+        await query.answer()
+
+        message = """⚙️ <b>Settings</b>
+
+<i>Settings feature is being implemented</i>
+
+Available settings:
+• Confidence threshold
+• Notification method
+• Sports filter"""
+
+        keyboard = [
+            [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def unknown_command(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle unknown commands"""
+        user = update.effective_user
+        logger.warning(f"Unknown command from {user.id}: {update.message.text}")
+
+        await update.message.reply_text(
+            "❌ Unknown command. Type /help to see available commands."
+        )
+
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Log errors caused by Updates"""
+        logger.error(f"Exception while handling an update: {context.error}")
+
+
+async def main():
+    """Start the Telegram bot"""
+    logger.info("Starting Telegram Bot...")
+
+    # Initialize handler
+    handler = BettingBotHandler()
+
+    # Create application
+    application = Application.builder().token(handler.token).build()
+
+    # Add handlers
+    application.add_handler(CommandHandler("start", handler.start))
+    application.add_handler(CommandHandler("help", handler.help_command))
+    application.add_handler(CommandHandler("analyze", handler.analyze_callback))
+    application.add_handler(CallbackQueryHandler(handler.button_callback))
+    application.add_error_handler(handler.error_handler)
+    application.add_handler(
+        MessageHandler(filters.COMMAND, handler.unknown_command)
+    )
+
+    # Start the bot
+    logger.info("Telegram bot is running. Press Ctrl+C to stop.")
+    await application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+
+def run_bot():
+    """Run the bot with proper event loop handling"""
+    try:
+        # Try to get the existing event loop
+        try:
+            loop = asyncio.get_running_loop()
+            # If we get here, we're already in an async context
+            logger.error("Cannot run bot in existing event loop. Use 'asyncio.run(main())' or run as standalone script")
+            return False
+        except RuntimeError:
+            # No running loop, safe to create one
+            asyncio.run(main())
+            return True
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+        sys.exit(0)
+
+
+if __name__ == "__main__":
+    run_bot()
