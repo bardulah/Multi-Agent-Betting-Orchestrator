@@ -112,11 +112,13 @@ Search for betting tips and predictions for this specific match. Provide your an
             'confidence': analysis.get('confidence', 0.0),
             'sources_count': analysis.get('sources_count', 0),
             'summary': analysis.get('summary', ''),
-            'consensus': analysis.get('consensus', 'No clear consensus')
+            'consensus': analysis.get('consensus', 'No clear consensus'),
+            'analysis': analysis.get('summary', '')  # Analysis field for notifications
         }
     
     def error_result(self, match: Dict, error: str) -> Dict:
         """Format error result for internet picks"""
+        error_message = f'Error: {error}'
         return {
             'match_id': match['id'],
             'homeTeam': match['homeTeam'],
@@ -125,8 +127,9 @@ Search for betting tips and predictions for this specific match. Provide your an
             'picks': [],
             'confidence': 0.0,
             'sources_count': 0,
-            'summary': f'Error: {error}',
-            'consensus': 'Error'
+            'summary': error_message,
+            'consensus': 'Error',
+            'analysis': error_message  # Analysis field for notifications
         }
     
     def _fallback_parse(self, text: str) -> Dict:
