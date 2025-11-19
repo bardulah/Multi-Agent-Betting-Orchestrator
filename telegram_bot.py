@@ -476,33 +476,14 @@ Check /help for more information."""
             del self.user_analysis_state[user_id]
 
     async def analyze_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle analyze button - show analysis options"""
+        """Handle analyze button - run analysis"""
         query = update.callback_query
         await query.answer()
+        user_id = update.effective_user.id
 
-        message = """🔍 <b>Run Analysis</b>
-
-Select what to analyze:"""
-
-        keyboard = [
-            [
-                InlineKeyboardButton("⚽ All Sports", callback_data="analyze_all"),
-                InlineKeyboardButton("🏀 Basketball", callback_data="analyze_basketball"),
-            ],
-            [
-                InlineKeyboardButton("⚽ Football", callback_data="analyze_football"),
-                InlineKeyboardButton("🎾 Tennis", callback_data="analyze_tennis"),
-            ],
-            [
-                InlineKeyboardButton("🏒 Hockey", callback_data="analyze_hockey"),
-            ],
-            [
-                InlineKeyboardButton("◀️ Back", callback_data="start_menu"),
-            ],
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-
-        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+        # Note: Sports filtering not yet supported by run.py
+        # For now, always analyze all sports
+        await self.run_analysis_for_sport(update, context, 'all')
 
     async def settings_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle settings button - show settings menu"""

@@ -236,6 +236,126 @@ class BetPaginator:
         return f"{self.current_index + 1}/{len(self.bets)}"
 
 
+class UserSettings:
+    """Manage user preferences and settings"""
+
+    # Default settings for new users
+    DEFAULT_SETTINGS = {
+        'confidence_threshold': 0.7,  # 70% minimum confidence
+        'sports': ['football', 'basketball', 'tennis', 'hockey'],  # All sports
+        'notifications_enabled': True,
+        'show_reasoning': True,
+        'min_odds_value': 1.0,  # Show all picks by default
+    }
+
+    def __init__(self, settings_file: str = "data/user_settings.json"):
+        """
+        Initialize settings manager
+
+        Args:
+            settings_file: Path to JSON file storing user settings
+        """
+        self.settings_file = Path(settings_file)
+        self.settings_dir = self.settings_file.parent
+        self.settings_dir.mkdir(parents=True, exist_ok=True)
+        self._load_all_settings()
+
+    def _load_all_settings(self) -> Dict:
+        """Load all settings from file"""
+        if not self.settings_file.exists():
+            return {}
+
+        try:
+            with open(self.settings_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load settings file: {e}")
+            return {}
+
+    def _save_all_settings(self, all_settings: Dict) -> bool:
+        """Save all settings to file"""
+        try:
+            with open(self.settings_file, 'w') as f:
+                json.dump(all_settings, f, indent=2)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save settings: {e}")
+            return False
+
+    def get_user_settings(self, user_id: int) -> Dict:
+        """
+        Get settings for a user (returns defaults if not set)
+
+        Args:
+            user_id: Telegram user ID
+
+        Returns:
+            User settings dictionary
+        """
+        all_settings = self._load_all_settings()
+        user_key = str(user_id)
+
+        if user_key not in all_settings:
+            # New user - use defaults
+            return self.DEFAULT_SETTINGS.copy()
+
+        # Merge with defaults (in case new settings were added)
+        settings = self.DEFAULT_SETTINGS.copy()
+        settings.update(all_settings[user_key])
+        return settings
+
+    def update_user_setting(self, user_id: int, key: str, value) -> bool:
+        """
+        Update a single setting for a user
+
+        Args:
+            user_id: Telegram user ID
+            key: Setting key
+            value: New value
+
+        Returns:
+            True if successful
+        """
+        all_settings = self._load_all_settings()
+        user_key = str(user_id)
+
+        if user_key not in all_settings:
+            all_settings[user_key] = {}
+
+        all_settings[user_key][key] = value
+        return self._save_all_settings(all_settings)
+
+    def update_user_settings(self, user_id: int, settings: Dict) -> bool:
+        """
+        Update multiple settings for a user
+
+        Args:
+            user_id: Telegram user ID
+            settings: Dictionary of settings to update
+
+        Returns:
+            True if successful
+        """
+        all_settings = self._load_all_settings()
+        user_key = str(user_id)
+
+        if user_key not in all_settings:
+            all_settings[user_key] = {}
+
+        all_settings[user_key].update(settings)
+        return self._save_all_settings(all_settings)
+
+    def reset_user_settings(self, user_id: int) -> bool:
+        """Reset user settings to defaults"""
+        all_settings = self._load_all_settings()
+        user_key = str(user_id)
+
+        if user_key in all_settings:
+            del all_settings[user_key]
+
+        return self._save_all_settings(all_settings)
+
+
 class AnalysisRunner:
     """Run betting analysis asynchronously"""
 
@@ -258,8 +378,8 @@ class AnalysisRunner:
 
         Args:
             date: "today" or "tomorrow"
-            sports: Optional list of sports to analyze
-            limit: Optional limit on number of matches
+            sports: Optional list of sports to analyze (currently not supported by run.py)
+            limit: Optional limit on number of matches (currently not supported by run.py)
 
         Returns:
             True if analysis completed successfully
@@ -268,20 +388,15 @@ class AnalysisRunner:
             # Build command as list (safe from shell injection)
             cmd = ["python3", str(self.script_path)]
 
-            # Add date flag
+            # Add date flag (only supported argument for filtering)
             if date.lower() == "tomorrow":
                 cmd.append("--date")
                 cmd.append("tomorrow")
 
-            # Add sports filter if specified
-            if sports:
-                cmd.append("--sports")
-                cmd.extend(sports)
-
-            # Add limit if specified
-            if limit:
-                cmd.append("--limit")
-                cmd.append(str(limit))
+            # Note: sports and limit are not yet supported by run.py
+            # They are kept as parameters for future expansion
+            if sports or limit:
+                logger.warning(f"Sports filter and limits not yet supported by run.py (requested: sports={sports}, limit={limit})")
 
             logger.info(f"Running analysis: {' '.join(cmd)}")
 
