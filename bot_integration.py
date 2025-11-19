@@ -1,9 +1,11 @@
 """
 Integration layer between Telegram bot and betting system
-Handles data loading, formatting, and state management
+Handles data loading, formatting, state management, and analysis execution
 """
 
 import json
+import subprocess
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional
 from datetime import datetime
@@ -232,3 +234,81 @@ class BetPaginator:
     def get_status(self) -> str:
         """Get pagination status string"""
         return f"{self.current_index + 1}/{len(self.bets)}"
+
+
+class AnalysisRunner:
+    """Run betting analysis asynchronously"""
+
+    def __init__(self, script_path: str = "run.py"):
+        self.script_path = Path(script_path)
+        if not self.script_path.exists():
+            raise FileNotFoundError(f"Analysis script not found: {script_path}")
+
+        logger.info(f"AnalysisRunner initialized with script: {script_path}")
+
+    async def run_analysis(
+        self,
+        date: str = "today",
+        sports: Optional[List[str]] = None,
+        limit: Optional[int] = None
+    ) -> bool:
+        """
+        Run analysis asynchronously using subprocess.
+        Uses array-based command (safe from injection).
+
+        Args:
+            date: "today" or "tomorrow"
+            sports: Optional list of sports to analyze
+            limit: Optional limit on number of matches
+
+        Returns:
+            True if analysis completed successfully
+        """
+        try:
+            # Build command as list (safe from shell injection)
+            cmd = ["python3", str(self.script_path)]
+
+            # Add date flag
+            if date.lower() == "tomorrow":
+                cmd.append("--date")
+                cmd.append("tomorrow")
+
+            # Add sports filter if specified
+            if sports:
+                cmd.append("--sports")
+                cmd.extend(sports)
+
+            # Add limit if specified
+            if limit:
+                cmd.append("--limit")
+                cmd.append(str(limit))
+
+            logger.info(f"Running analysis: {' '.join(cmd)}")
+
+            # Run as subprocess (array-based, safe)
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            # Wait for completion with timeout
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=3600  # 1 hour timeout
+            )
+
+            if process.returncode == 0:
+                logger.info("Analysis completed successfully")
+                return True
+            else:
+                logger.error(f"Analysis failed with code {process.returncode}")
+                logger.error(f"stderr: {stderr.decode()}")
+                return False
+
+        except asyncio.TimeoutError:
+            logger.error("Analysis timed out")
+            return False
+        except Exception as e:
+            logger.error(f"Failed to run analysis: {e}")
+            return False

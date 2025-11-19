@@ -45,7 +45,11 @@ def test_handler_methods_exist():
         'start_menu_callback',
         'button_callback',
         'show_results_callback',
+        'show_next_callback',
+        'show_prev_callback',
+        'show_status_callback',
         'analyze_callback',
+        'run_analysis_for_sport',
         'settings_callback',
         'unknown_command',
         'error_handler'
