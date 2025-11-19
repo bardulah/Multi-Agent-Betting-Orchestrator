@@ -25,7 +25,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 from agents.utils.logging_config import get_logger
-from bot_integration import ResultsLoader, ResultFormatter, BetPaginator, AnalysisRunner
+from bot_integration import ResultsLoader, ResultFormatter, BetPaginator, AnalysisRunner, UserSettings
 
 # Setup logging
 logger = get_logger(__name__)
@@ -46,12 +46,16 @@ class BettingBotHandler:
         self.results_loader = ResultsLoader()
         self.formatter = ResultFormatter()
         self.analysis_runner = AnalysisRunner()
+        self.user_settings = UserSettings()
 
         # Store pagination state per user
         self.user_paginators = {}
 
         # Store analysis state per user (for tracking running analysis)
         self.user_analysis_state = {}
+
+        # Store settings edit state per user
+        self.user_settings_state = {}
 
         logger.info("Telegram Bot Handler initialized")
 
@@ -197,6 +201,25 @@ Select an action below:"""
             await self.run_analysis_for_sport(update, context, sport)
         elif callback_data == "settings":
             await self.settings_callback(update, context)
+        elif callback_data == "settings_menu":
+            await self.settings_callback(update, context)
+        elif callback_data == "settings_confidence":
+            await self.settings_confidence_callback(update, context)
+        elif callback_data == "settings_sports":
+            await self.settings_sports_callback(update, context)
+        elif callback_data == "settings_notifications":
+            await self.settings_notifications_callback(update, context)
+        elif callback_data.startswith("conf_"):
+            confidence = float(callback_data.replace("conf_", ""))
+            await self.save_confidence_setting(update, context, confidence)
+        elif callback_data.startswith("sport_"):
+            sport = callback_data.replace("sport_", "")
+            await self.toggle_sport_setting(update, context, sport)
+        elif callback_data.startswith("notif_"):
+            enabled = callback_data == "notif_on"
+            await self.save_notification_setting(update, context, enabled)
+        elif callback_data == "settings_reset":
+            await self.reset_settings(update, context)
         else:
             await query.answer("Command not yet implemented", show_alert=False)
 
@@ -482,21 +505,252 @@ Select what to analyze:"""
         await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
 
     async def settings_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle settings button"""
+        """Handle settings button - show settings menu"""
         query = update.callback_query
         await query.answer()
+        user_id = update.effective_user.id
 
-        message = """⚙️ <b>Settings</b>
+        # Get current settings
+        settings = self.user_settings.get_user_settings(user_id)
+        confidence = settings['confidence_threshold']
+        sports = settings['sports']
+        notifications = settings['notifications_enabled']
 
-<i>Settings feature is being implemented</i>
+        message = f"""⚙️ <b>Preferences</b>
 
-Available settings:
-• Confidence threshold
-• Notification method
-• Sports filter"""
+<b>Current Settings:</b>
+• Confidence Threshold: {confidence:.0%}
+• Sports: {', '.join([s.title() for s in sports])}
+• Notifications: {'✅ Enabled' if notifications else '❌ Disabled'}
+
+<b>Tap to change:</b>"""
 
         keyboard = [
+            [InlineKeyboardButton("📊 Confidence Threshold", callback_data="settings_confidence")],
+            [InlineKeyboardButton("⚽ Sports Filter", callback_data="settings_sports")],
+            [InlineKeyboardButton("🔔 Notifications", callback_data="settings_notifications")],
+            [InlineKeyboardButton("🔄 Reset to Defaults", callback_data="settings_reset")],
             [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def settings_confidence_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle confidence threshold setting"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        message = """📊 <b>Confidence Threshold</b>
+
+Select minimum confidence level for recommendations:
+
+(Higher = stricter filtering = fewer bets)"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton("50%", callback_data="conf_0.5"),
+                InlineKeyboardButton("60%", callback_data="conf_0.6"),
+                InlineKeyboardButton("70%", callback_data="conf_0.7"),
+            ],
+            [
+                InlineKeyboardButton("80%", callback_data="conf_0.8"),
+                InlineKeyboardButton("90%", callback_data="conf_0.9"),
+            ],
+            [InlineKeyboardButton("◀️ Back to Settings", callback_data="settings_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def settings_sports_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle sports filter setting"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        current_sports = self.user_settings.get_user_settings(user_id)['sports']
+
+        message = """⚽ <b>Sports Filter</b>
+
+Select sports to include in analysis:"""
+
+        keyboard = []
+        for sport in ['football', 'basketball', 'tennis', 'hockey']:
+            emoji = '✅' if sport in current_sports else '❌'
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{emoji} {sport.title()}",
+                    callback_data=f"sport_{sport}"
+                )
+            ])
+
+        keyboard.append([InlineKeyboardButton("◀️ Back to Settings", callback_data="settings_menu")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def settings_notifications_callback(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Handle notifications setting"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        current_setting = self.user_settings.get_user_settings(user_id)['notifications_enabled']
+
+        message = """🔔 <b>Notifications</b>
+
+Choose notification preference:"""
+
+        keyboard = [
+            [
+                InlineKeyboardButton(
+                    f"{'✅ ' if current_setting else ''}Enable",
+                    callback_data="notif_on"
+                ),
+                InlineKeyboardButton(
+                    f"{'✅ ' if not current_setting else ''}Disable",
+                    callback_data="notif_off"
+                ),
+            ],
+            [InlineKeyboardButton("◀️ Back to Settings", callback_data="settings_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def save_confidence_setting(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, confidence: float
+    ) -> None:
+        """Save confidence threshold setting"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        # Save setting
+        self.user_settings.update_user_setting(user_id, 'confidence_threshold', confidence)
+        logger.info(f"User {user_id} set confidence threshold to {confidence:.0%}")
+
+        # Show confirmation
+        message = f"""✅ <b>Confidence Threshold Updated</b>
+
+New minimum confidence: <code>{confidence:.0%}</code>
+
+Only recommendations with confidence above this level will be shown.
+
+Returning to settings menu..."""
+
+        keyboard = [
+            [InlineKeyboardButton("⚙️ Back to Settings", callback_data="settings_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def toggle_sport_setting(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, sport: str
+    ) -> None:
+        """Toggle a sport in the sports filter"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        # Get current sports list
+        current_sports = self.user_settings.get_user_settings(user_id)['sports']
+
+        # Toggle the sport
+        if sport in current_sports:
+            current_sports.remove(sport)
+            action = "removed from"
+        else:
+            current_sports.append(sport)
+            action = "added to"
+
+        # Save updated list
+        self.user_settings.update_user_setting(user_id, 'sports', current_sports)
+        logger.info(f"User {user_id} toggled sport {sport}. Current: {current_sports}")
+
+        # Refresh the sports menu
+        message = """⚽ <b>Sports Filter</b>
+
+Select sports to include in analysis:"""
+
+        keyboard = []
+        for s in ['football', 'basketball', 'tennis', 'hockey']:
+            emoji = '✅' if s in current_sports else '❌'
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"{emoji} {s.title()}",
+                    callback_data=f"sport_{s}"
+                )
+            ])
+
+        keyboard.append([InlineKeyboardButton("◀️ Back to Settings", callback_data="settings_menu")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def save_notification_setting(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE, enabled: bool
+    ) -> None:
+        """Save notification preference"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        # Save setting
+        self.user_settings.update_user_setting(user_id, 'notifications_enabled', enabled)
+        status = "✅ Enabled" if enabled else "❌ Disabled"
+        logger.info(f"User {user_id} set notifications to {enabled}")
+
+        # Show confirmation
+        message = f"""✅ <b>Notifications Updated</b>
+
+Status: {status}
+
+Returning to settings menu..."""
+
+        keyboard = [
+            [InlineKeyboardButton("⚙️ Back to Settings", callback_data="settings_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="start_menu")],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def reset_settings(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Reset all settings to defaults"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        # Reset settings
+        self.user_settings.reset_user_settings(user_id)
+        logger.info(f"User {user_id} reset settings to defaults")
+
+        # Show confirmation
+        message = """✅ <b>Settings Reset</b>
+
+All preferences have been reset to defaults:
+• Confidence Threshold: 70%
+• Sports: All (Football, Basketball, Tennis, Hockey)
+• Notifications: Enabled
+
+Returning to settings menu..."""
+
+        keyboard = [
+            [InlineKeyboardButton("⚙️ Back to Settings", callback_data="settings_menu")],
+            [InlineKeyboardButton("🏠 Main Menu", callback_data="start_menu")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
