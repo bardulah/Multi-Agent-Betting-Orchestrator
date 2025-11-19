@@ -50,17 +50,38 @@ notifications:
     recipient_email: "recipient@example.com"
 ```
 
-### 4. Test the System
+### 4. Scrape Match Data
+
+Before analyzing, you need match data:
+
+```bash
+# Scrape today's matches
+cd scraper
+npm run scrape
+cd ..
+
+# Or scrape tomorrow's matches
+cd scraper
+npm run scrape:future
+cd ..
+```
+
+Results are saved to `data/matches.json` (today) or `data/matches-tomorrow.json` (tomorrow).
+
+### 5. Test the System
 
 ```bash
 # Test notification
 python run.py --test-notification
 
-# Run full system once
+# Run full system once (analyzes today's matches)
 python run.py
+
+# Run analysis on tomorrow's matches
+python run.py --date tomorrow
 ```
 
-### 5. Start Daily Scheduler
+### 6. Start Daily Scheduler
 
 ```bash
 python scheduler.py
@@ -87,7 +108,8 @@ After running, check:
 
 - **Logs**: `logs/betting_system.log`
 - **Latest Results**: `data/results.json`
-- **Match Data**: `data/matches.json`
+- **Today's Matches**: `data/matches.json`
+- **Tomorrow's Matches**: `data/matches-tomorrow.json`
 - **History**: `data/history.json`
 
 ### Example Result
@@ -110,7 +132,31 @@ After running, check:
 ```bash
 cd scraper
 npm install
+npm run scrape          # For today's matches
+npm run scrape:future   # For tomorrow's matches
+```
+
+### No Match Data Available
+If `python run.py` shows no matches:
+```bash
+# Scrape matches first
+cd scraper
 npm run scrape
+cd ..
+
+# Then run analysis
+python run.py
+```
+
+### Analyzing Tomorrow's Matches
+```bash
+# First scrape tomorrow's data
+cd scraper
+npm run scrape:future
+cd ..
+
+# Then analyze
+python run.py --date tomorrow
 ```
 
 ### Python Import Errors

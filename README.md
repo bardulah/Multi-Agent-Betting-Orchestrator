@@ -7,6 +7,10 @@ A sophisticated multi-agent system leveraging **Google's Agent Development Kit (
 ## 🎯 Features
 
 - **Automated Match Scraping**: Puppeteer-based scraper for Flashscore.com (football, basketball, tennis, hockey)
+  - Scrape today's matches: `npm run scrape`
+  - Scrape tomorrow's matches: `npm run scrape:future`
+- **Date-Specific Analysis**: Analyze matches for any date without data loss
+  - Keep separate files: `data/matches.json` (today) and `data/matches-tomorrow.json` (tomorrow)
 - **Multi-Agent Analysis**:
   - Internet Picks Agent: Aggregates betting tips from online sources
   - Data-Driven Agent: Statistical analysis based on objective data
@@ -22,6 +26,8 @@ A sophisticated multi-agent system leveraging **Google's Agent Development Kit (
 ┌─────────────────────────────────────────────────────────────┐
 │                    Orchestrator                              │
 │  (Coordinates all agents and workflow)                      │
+│  - Routes match files by date                              │
+│  - Manages scraper execution                               │
 └─────────────────────────────────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
@@ -45,6 +51,23 @@ A sophisticated multi-agent system leveraging **Google's Agent Development Kit (
                     │    Agent     │
                     └──────────────┘
 ```
+
+### Date-Aware File Routing
+
+The orchestrator uses date-specific match files to prevent data loss when scraping different dates:
+
+```
+--date today     →  data/matches.json          ← Default
+                    (used by python run.py)
+
+--date tomorrow  →  data/matches-tomorrow.json
+                    (used by python run.py --date tomorrow)
+```
+
+**Scraper Output:**
+- Both `npm run scrape` and `npm run scrape:future` initially output to `data/matches.json`
+- The orchestrator copies the data to the appropriate date-specific file after scraping
+- This prevents overwrites when switching between date-specific scraping
 
 ## 📋 Prerequisites
 
@@ -136,13 +159,18 @@ Edit `config/config.yaml` to customize:
 Execute the betting system immediately:
 
 ```bash
+# Analyze today's matches
 python run.py
+
+# Analyze tomorrow's matches
+python run.py --date tomorrow
 ```
 
 Or with custom config:
 
 ```bash
 python run.py --config path/to/config.yaml
+python run.py --config path/to/config.yaml --date tomorrow
 ```
 
 ### Test Notifications
@@ -205,10 +233,19 @@ sudo systemctl status betting-system
 
 ### Results Files
 
-- `data/matches.json`: Scraped match data
+- `data/matches.json`: Today's scraped match data
+- `data/matches-tomorrow.json`: Tomorrow's scraped match data
 - `data/results.json`: Latest recommendations
 - `data/history.json`: Historical recommendations
 - `logs/betting_system.log`: System logs
+
+### Date-Specific Files
+
+The system maintains separate match files for each date to prevent overwrites:
+- Run `npm run scrape` to populate `data/matches.json` (today)
+- Run `npm run scrape:future` to populate `data/matches-tomorrow.json` (tomorrow)
+- Run `python run.py --date today` to analyze today's matches (uses `data/matches.json`)
+- Run `python run.py --date tomorrow` to analyze tomorrow's matches (uses `data/matches-tomorrow.json`)
 
 ### Recommendation Format
 
@@ -233,7 +270,8 @@ sudo systemctl status betting-system
 **Test Scraper:**
 ```bash
 cd scraper
-npm run scrape
+npm run scrape          # Scrapes today's matches
+npm run scrape:future   # Scrapes tomorrow's matches
 ```
 
 **Test Internet Picks Agent:**
@@ -320,6 +358,17 @@ sports:
 
 ## 🐛 Troubleshooting
 
+### Date-Specific Issues
+
+**Problem**: Analyzing tomorrow's matches but getting today's data
+- Ensure you ran `npm run scrape:future` before analyzing
+- Check that `data/matches-tomorrow.json` exists and has data
+- Verify with: `python run.py --date tomorrow`
+
+**Problem**: Data overwrites when switching between dates
+- Each date has its own file: `data/matches.json` (today) and `data/matches-tomorrow.json` (tomorrow)
+- Scraping both dates in sequence is safe - no data loss
+
 ### Scraper Issues
 
 **Problem**: Matches not found
@@ -330,6 +379,10 @@ sports:
 **Problem**: Browser crashes
 - Increase system resources
 - Reduce concurrent matches being processed
+
+**Problem**: Tomorrow's scraper gets today's date
+- Future matches are automatically dated to tomorrow via the orchestrator
+- Check `data/matches-tomorrow.json` to confirm dates
 
 ### API Issues
 
