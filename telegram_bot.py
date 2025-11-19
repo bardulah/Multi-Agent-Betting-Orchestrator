@@ -25,6 +25,7 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 from agents.utils.logging_config import get_logger
+from bot_integration import ResultsLoader, ResultFormatter, BetPaginator
 
 # Setup logging
 logger = get_logger(__name__)
@@ -41,6 +42,12 @@ class BettingBotHandler:
         self.token = os.getenv('TELEGRAM_BOT_TOKEN')
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN not found in environment variables")
+
+        self.results_loader = ResultsLoader()
+        self.formatter = ResultFormatter()
+
+        # Store pagination state per user
+        self.user_paginators = {}
 
         logger.info("Telegram Bot Handler initialized")
 
@@ -162,8 +169,9 @@ Select an action below:"""
         """Handle callback query (button press)"""
         query = update.callback_query
         callback_data = query.data
+        user_id = update.effective_user.id
 
-        logger.info(f"Button pressed: {callback_data}")
+        logger.info(f"Button pressed: {callback_data} by user {user_id}")
 
         # Route to appropriate handler
         if callback_data == "help":
@@ -172,6 +180,12 @@ Select an action below:"""
             await self.start_menu_callback(update, context)
         elif callback_data == "show_today":
             await self.show_results_callback(update, context, "today")
+        elif callback_data == "show_next":
+            await self.show_next_callback(update, context)
+        elif callback_data == "show_prev":
+            await self.show_prev_callback(update, context)
+        elif callback_data == "show_status":
+            await self.show_status_callback(update, context)
         elif callback_data == "analyze":
             await self.analyze_callback(update, context)
         elif callback_data == "settings":
@@ -185,20 +199,155 @@ Select an action below:"""
         """Handle showing results"""
         query = update.callback_query
         await query.answer()
+        user_id = update.effective_user.id
 
-        # Placeholder for now
-        message = f"""📊 <b>Recommendations for {date.upper()}</b>
+        # Load results
+        results = self.results_loader.load_results(date)
 
-<i>Loading results...</i>
+        if not results:
+            message = f"""❌ <b>No recommendations available for {date.upper()}</b>
 
-(This feature is being implemented)"""
+Please run analysis first with /analyze"""
 
-        keyboard = [
-            [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
-        ]
+            keyboard = [
+                [InlineKeyboardButton("🔍 Run Analysis", callback_data="analyze")],
+                [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+            return
+
+        # Get BET recommendations
+        recommendations = results.get('recommendations', [])
+        bet_recommendations = [r for r in recommendations if r.get('recommendation') == 'BET']
+
+        if not bet_recommendations:
+            message = f"""📊 <b>Recommendations for {date.upper()}</b>
+
+No BET recommendations found.
+({len(recommendations)} matches analyzed, all marked as NO_BET or HOLD)"""
+
+            keyboard = [
+                [InlineKeyboardButton("🔍 Run New Analysis", callback_data="analyze")],
+                [InlineKeyboardButton("◀️ Back", callback_data="start_menu")],
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+            return
+
+        # Create paginator and store for user
+        paginator = BetPaginator(bet_recommendations)
+        self.user_paginators[user_id] = {'paginator': paginator, 'date': date}
+
+        # Show first bet
+        current_bet = paginator.get_current()
+        message = self.formatter.format_full_bet(current_bet, number=1)
+        message = f"📊 <b>Recommendations for {date.upper()}</b>\n\n" + message
+
+        keyboard = []
+        if paginator.has_prev() or paginator.has_next():
+            nav_buttons = []
+            if paginator.has_prev():
+                nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data="show_prev"))
+            nav_buttons.append(InlineKeyboardButton(f"📄 {paginator.get_status()}", callback_data="show_status"))
+            if paginator.has_next():
+                nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data="show_next"))
+            keyboard.append(nav_buttons)
+
+        keyboard.append([
+            InlineKeyboardButton("🔍 New Analysis", callback_data="analyze"),
+            InlineKeyboardButton("◀️ Back", callback_data="start_menu"),
+        ])
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-
         await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def show_next_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle next button in pagination"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        if user_id not in self.user_paginators:
+            await query.answer("Session expired. Please use /show to start again.", show_alert=True)
+            return
+
+        state = self.user_paginators[user_id]
+        paginator = state['paginator']
+        date = state['date']
+
+        if paginator.next():
+            current_bet = paginator.get_current()
+            number = paginator.current_index + 1
+            message = self.formatter.format_full_bet(current_bet, number=number)
+            message = f"📊 <b>Recommendations for {date.upper()}</b>\n\n" + message
+
+            keyboard = []
+            nav_buttons = []
+            if paginator.has_prev():
+                nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data="show_prev"))
+            nav_buttons.append(InlineKeyboardButton(f"📄 {paginator.get_status()}", callback_data="show_status"))
+            if paginator.has_next():
+                nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data="show_next"))
+            keyboard.append(nav_buttons)
+
+            keyboard.append([
+                InlineKeyboardButton("🔍 New Analysis", callback_data="analyze"),
+                InlineKeyboardButton("◀️ Back", callback_data="start_menu"),
+            ])
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def show_prev_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle previous button in pagination"""
+        query = update.callback_query
+        await query.answer()
+        user_id = update.effective_user.id
+
+        if user_id not in self.user_paginators:
+            await query.answer("Session expired. Please use /show to start again.", show_alert=True)
+            return
+
+        state = self.user_paginators[user_id]
+        paginator = state['paginator']
+        date = state['date']
+
+        if paginator.prev():
+            current_bet = paginator.get_current()
+            number = paginator.current_index + 1
+            message = self.formatter.format_full_bet(current_bet, number=number)
+            message = f"📊 <b>Recommendations for {date.upper()}</b>\n\n" + message
+
+            keyboard = []
+            nav_buttons = []
+            if paginator.has_prev():
+                nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data="show_prev"))
+            nav_buttons.append(InlineKeyboardButton(f"📄 {paginator.get_status()}", callback_data="show_status"))
+            if paginator.has_next():
+                nav_buttons.append(InlineKeyboardButton("Next ▶️", callback_data="show_next"))
+            keyboard.append(nav_buttons)
+
+            keyboard.append([
+                InlineKeyboardButton("🔍 New Analysis", callback_data="analyze"),
+                InlineKeyboardButton("◀️ Back", callback_data="start_menu"),
+            ])
+
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(message, reply_markup=reply_markup, parse_mode="HTML")
+
+    async def show_status_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle status button - just show a toast"""
+        query = update.callback_query
+        user_id = update.effective_user.id
+
+        if user_id not in self.user_paginators:
+            await query.answer("Session expired.")
+            return
+
+        state = self.user_paginators[user_id]
+        paginator = state['paginator']
+        await query.answer(f"Viewing {paginator.get_status()}", show_alert=False)
 
     async def analyze_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle analyze button"""
