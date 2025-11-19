@@ -276,7 +276,7 @@ class NotificationAgent:
                     <strong>🌐 Internet Picks (Community)</strong><br>
                     <strong>Picks:</strong> {picks_html}<br>
                     <strong>Confidence:</strong> {internet.get('confidence', 0.0):.1%}<br>
-                    <strong>Analysis:</strong> {internet.get('analysis', 'N/A')[:500]}
+                    <strong>Analysis:</strong> {internet.get('analysis', 'N/A')}
                 </div>
                 """
 
@@ -289,7 +289,7 @@ class NotificationAgent:
                     <strong>📊 Data-Driven (Statistical)</strong><br>
                     <strong>Picks:</strong> {picks_html}<br>
                     <strong>Confidence:</strong> {data_driven.get('confidence', 0.0):.1%}<br>
-                    <strong>Analysis:</strong> {data_driven.get('analysis', 'N/A')[:500]}
+                    <strong>Analysis:</strong> {data_driven.get('analysis', 'N/A')}
                 </div>
                 """
 
