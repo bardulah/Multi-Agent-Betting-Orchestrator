@@ -267,23 +267,45 @@ class BaseAnalysisAgent(ABC):
     def _parse_response(self, text: str) -> Dict:
         """
         Parse JSON from agent response with fallback.
-        
+
         Args:
             text: Raw text response from agent
-        
+
         Returns:
             Parsed dictionary
         """
         try:
-            # Try to find JSON anywhere in response
+            # Strategy 1: Try to find JSON in markdown code blocks first
+            # Look for ```json ... ``` blocks
+            code_block_match = re.search(r'```json\s*\n(.*?)\n```', text, re.DOTALL)
+            if code_block_match:
+                try:
+                    parsed = json.loads(code_block_match.group(1))
+                    self.logger.debug(f"Successfully parsed JSON from markdown code block")
+                    return parsed
+                except json.JSONDecodeError:
+                    self.logger.debug(f"Invalid JSON in code block, trying alternative patterns")
+
+            # Strategy 2: Try to find bare JSON object (non-greedy to avoid spanning multiple objects)
+            # Use non-greedy matching and try to find valid JSON
+            for json_match in re.finditer(r'\{[^{}]*\}', text):
+                try:
+                    parsed = json.loads(json_match.group())
+                    self.logger.debug(f"Successfully parsed JSON from response")
+                    return parsed
+                except json.JSONDecodeError:
+                    continue
+
+            # Strategy 3: Try greedy matching as last resort
             json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group())
-                self.logger.debug(f"Successfully parsed JSON from response")
+                self.logger.debug(f"Successfully parsed JSON from response (greedy)")
                 return parsed
+
         except Exception as e:
             self.logger.debug(f"Could not parse JSON: {e}")
-        
+
         # Fallback: use subclass-specific extraction
         self.logger.debug(f"Using fallback parsing for {self.__class__.__name__}")
         return self._fallback_parse(text)
