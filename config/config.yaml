@@ -60,7 +60,7 @@ logging:
 # Scheduling
 schedule:
   enabled: true
-  time: "09:00"  # Daily run time (24-hour format)
+  time: "08:00"  # Daily run time (24-hour format)
   timezone: "UTC"
 
 # Data storage
