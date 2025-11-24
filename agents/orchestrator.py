@@ -17,6 +17,7 @@ from google.adk.sessions import InMemorySessionService
 
 from .internet_picks_agent import InternetPicksAgent
 from .data_driven_agent import DataDrivenAgent
+from .intuition_agent import IntuitionAgent
 from .synthesis_agent import SynthesisAgent
 from .notification_agent import NotificationAgent
 from .betting_orchestrator_agent import BettingOrchestratorAgent
@@ -64,6 +65,7 @@ class BettingSystemOrchestrator:
         self.logger.info("Initializing agents...")
         self.internet_picks_agent = InternetPicksAgent(self.config)
         self.data_driven_agent = DataDrivenAgent(self.config)
+        self.intuition_agent = IntuitionAgent(self.config)
         self.synthesis_agent = SynthesisAgent(self.config)
         self.notification_agent = NotificationAgent(self.config)
         self.orchestrator_agent = BettingOrchestratorAgent(self.config)
@@ -205,18 +207,18 @@ class BettingSystemOrchestrator:
 
     def analyze_match_parallel(self, match: Dict) -> Dict:
         """
-        Analyze a single match with both agents in parallel
+        Analyze a single match with all agents in parallel
 
         Args:
             match: Match data dictionary
 
         Returns:
-            Dictionary with both analyses
+            Dictionary with all analyses
         """
         self.logger.info(f"Analyzing match: {match['homeTeam']} vs {match['awayTeam']}")
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit both agent tasks
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Submit all agent tasks in parallel
             internet_future = executor.submit(
                 self.internet_picks_agent.analyze_match,
                 match
@@ -225,15 +227,21 @@ class BettingSystemOrchestrator:
                 self.data_driven_agent.analyze_match,
                 match
             )
+            intuition_future = executor.submit(
+                self.intuition_agent.analyze_match,
+                match
+            )
 
-            # Wait for both to complete
+            # Wait for all to complete
             internet_result = internet_future.result()
             data_driven_result = data_driven_future.result()
+            intuition_result = intuition_future.result()
 
         return {
             'match': match,
             'internet_picks': internet_result,
-            'data_driven': data_driven_result
+            'data_driven': data_driven_result,
+            'intuition': intuition_result
         }
 
     async def process_all_matches_with_adk_orchestrator(self, matches: List[Dict]) -> List[Dict]:
@@ -290,6 +298,7 @@ class BettingSystemOrchestrator:
         # Extract results for synthesis and add match_id to each result
         internet_picks_results = []
         data_driven_results = []
+        intuition_results = []
 
         for analysis in analyses:
             match_id = analysis['match']['id']
@@ -304,33 +313,42 @@ class BettingSystemOrchestrator:
             data_driven['match_id'] = match_id
             data_driven_results.append(data_driven)
 
-        # Run synthesis agent (3-layer: Internet Picks + Data-Driven → Synthesis)
-        self.logger.info("Running synthesis agent (3-layer analysis)...")
+            # Add match_id to intuition result
+            intuition = analysis['intuition']
+            intuition['match_id'] = match_id
+            intuition_results.append(intuition)
+
+        # Run synthesis agent (4-layer: Internet Picks + Data-Driven + Intuition → Synthesis)
+        self.logger.info("Running synthesis agent (4-layer analysis)...")
         synthesis_recommendations = self.synthesis_agent.process_matches(
             matches,
             internet_picks_results,
-            data_driven_results
+            data_driven_results,
+            intuition_results
         )
 
-        # Enhance recommendations with individual agent results (all 3 layers)
+        # Enhance recommendations with individual agent results (all 4 layers)
         recommendations = self._enhance_recommendations_with_all_layers(
             synthesis_recommendations,
             internet_picks_results,
-            data_driven_results
+            data_driven_results,
+            intuition_results
         )
 
         return recommendations
 
     def _enhance_recommendations_with_all_layers(self, synthesis_recs: List[Dict],
                                                   internet_picks: List[Dict],
-                                                  data_driven: List[Dict]) -> List[Dict]:
+                                                  data_driven: List[Dict],
+                                                  intuition: List[Dict] = None) -> List[Dict]:
         """
-        Enhance recommendations by including all 3 layers of agent analysis.
+        Enhance recommendations by including all 4 layers of agent analysis.
 
         Args:
             synthesis_recs: Final synthesis recommendations
             internet_picks: Internet Picks agent results
             data_driven: Data-Driven agent results
+            intuition: Intuition agent results (optional for backwards compatibility)
 
         Returns:
             Enhanced recommendations with all layers
@@ -338,6 +356,7 @@ class BettingSystemOrchestrator:
         # Create lookup maps for quick access
         internet_map = {r.get('match_id'): r for r in internet_picks}
         data_driven_map = {r.get('match_id'): r for r in data_driven}
+        intuition_map = {r.get('match_id'): r for r in (intuition or [])}
 
         # Enhance each synthesis recommendation with individual layer results
         for rec in synthesis_recs:
@@ -359,6 +378,18 @@ class BettingSystemOrchestrator:
                     'picks': data_driven_data.get('picks', []),
                     'confidence': data_driven_data.get('confidence', 0.0),
                     'analysis': data_driven_data.get('analysis', '')
+                }
+
+            # Add Intuition layer
+            if match_id in intuition_map:
+                intuition_data = intuition_map[match_id]
+                rec['intuition'] = {
+                    'picks': intuition_data.get('picks', []),
+                    'confidence': intuition_data.get('confidence', 0.0),
+                    'intuition_factors': intuition_data.get('intuition_factors', []),
+                    'momentum': intuition_data.get('momentum', ''),
+                    'psychology': intuition_data.get('psychology', ''),
+                    'analysis': intuition_data.get('analysis', '')
                 }
 
         return synthesis_recs
