@@ -6,8 +6,8 @@ Main entry point for the Multi-Agent Betting System
 import sys
 import os
 
-# Add agents directory to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'agents'))
+# Add current directory to path (for agents, utils, and other modules)
+sys.path.insert(0, os.path.dirname(__file__))
 
 from agents.orchestrator import main
 

@@ -1,0 +1,18 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues:
+  - "ITALY:\_Lega A"
+  - "CZECH REPUBLIC:\_Extraliga"
+  - "RUSSIA:\_KHL"
+  limits:
+    basketball: 15
+    hockey: 20
+  name: Interactive Selection
+  sports:
+  - basketball
+  - hockey

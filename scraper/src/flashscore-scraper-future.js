@@ -12,6 +12,16 @@ class FlashscoreScraper {
     this.browser = null;
     this.page = null;
     this.matches = [];
+    // Automatically set to tomorrow's date for this scraper
+    const tomorrow = new Date(Date.now() + 86400000);
+    this.scrapeDate = tomorrow.toISOString().split('T')[0];
+    console.log(`📅 Future scraper initialized for: ${this.scrapeDate}\n`);
+  }
+
+  setScrapeDateToTomorrow() {
+    const tomorrow = new Date(Date.now() + 86400000);
+    this.scrapeDate = tomorrow.toISOString().split('T')[0];
+    console.log(`📅 Set scrape date to: ${this.scrapeDate}\n`);
   }
 
   async initialize() {
@@ -154,6 +164,24 @@ class FlashscoreScraper {
 
       await this.delay(3000);
 
+      // Click next day button to get tomorrow's matches
+      console.log('Clicking next day button...');
+      const nextDayClicked = await this.page.evaluate(() => {
+        const nextBtn = document.querySelector('button[data-day-picker-arrow="next"]');
+        if (nextBtn) {
+          nextBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (nextDayClicked) {
+        console.log('✓ Clicked next day button');
+        await new Promise(r => setTimeout(r, 4000)); // Wait for page to update
+      } else {
+        console.log('⚠️  Next day button not found');
+      }
+
       // Click odds tab directly (same method as debug script)
       console.log('Clicking odds tab...');
       const clicked = await this.page.evaluate(() => {
@@ -178,7 +206,7 @@ class FlashscoreScraper {
       }
 
       // Extract matches with odds AND LEAGUE INFORMATION
-      const matchData = await this.page.evaluate(() => {
+      const matchData = await this.page.evaluate((scrapeDate) => {
         const totalOddsElements = document.querySelectorAll('.odds__odd').length;
         const oddsWithValues = document.querySelectorAll('.odds__odd:not(.no-odds)').length;
         console.log(`Total odds elements: ${totalOddsElements}, with values: ${oddsWithValues}`);
@@ -340,7 +368,7 @@ class FlashscoreScraper {
               awayTeam: awayTeam,
               league: league,  // ✨ NOW PROPERLY EXTRACTED
               time: time,
-              date: new Date().toISOString().split('T')[0],
+              date: scrapeDate,
               odds: odds,
               _hasOdds: Object.keys(odds).length > 0
             });
@@ -379,6 +407,24 @@ class FlashscoreScraper {
       });
 
       await this.delay(this.config.scraper.rate_limit_delay);
+
+      // Click next day button to get tomorrow's matches
+      console.log('Clicking next day button...');
+      const nextDayClicked = await this.page.evaluate(() => {
+        const nextBtn = document.querySelector('button[data-day-picker-arrow="next"]');
+        if (nextBtn) {
+          nextBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (nextDayClicked) {
+        console.log('✓ Clicked next day button');
+        await new Promise(r => setTimeout(r, 4000)); // Wait for page to update
+      } else {
+        console.log('⚠️  Next day button not found');
+      }
 
       // Click odds tab to load odds data (critical for basketball)
       console.log('Clicking odds tab...');
@@ -556,7 +602,25 @@ class FlashscoreScraper {
       });
 
       await this.delay(3000);
-      
+
+      // Click next day button to get tomorrow's matches
+      console.log('Clicking next day button...');
+      const nextDayClicked = await this.page.evaluate(() => {
+        const nextBtn = document.querySelector('button[data-day-picker-arrow="next"]');
+        if (nextBtn) {
+          nextBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (nextDayClicked) {
+        console.log('✓ Clicked next day button');
+        await new Promise(r => setTimeout(r, 4000)); // Wait for page to update
+      } else {
+        console.log('⚠️  Next day button not found');
+      }
+
       // Click odds tab
       console.log('Clicking odds tab...');
       const clicked = await this.page.evaluate(() => {
@@ -729,6 +793,24 @@ class FlashscoreScraper {
       });
 
       await this.delay(this.config.scraper.rate_limit_delay);
+
+      // Click next day button to get tomorrow's matches
+      console.log('Clicking next day button...');
+      const nextDayClicked = await this.page.evaluate(() => {
+        const nextBtn = document.querySelector('button[data-day-picker-arrow="next"]');
+        if (nextBtn) {
+          nextBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (nextDayClicked) {
+        console.log('✓ Clicked next day button');
+        await new Promise(r => setTimeout(r, 4000)); // Wait for page to update
+      } else {
+        console.log('⚠️  Next day button not found');
+      }
 
       // Wait for hockey matches to load
       await this.page.waitForSelector('.event__match', { timeout: 15000 }).catch(() => {
@@ -935,6 +1017,24 @@ class FlashscoreScraper {
 
       await this.delay(3000);
 
+      // Click next day button to get tomorrow's matches
+      console.log('Clicking next day button...');
+      const nextDayClicked = await this.page.evaluate(() => {
+        const nextBtn = document.querySelector('button[data-day-picker-arrow="next"]');
+        if (nextBtn) {
+          nextBtn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (nextDayClicked) {
+        console.log('✓ Clicked next day button');
+        await new Promise(r => setTimeout(r, 4000)); // Wait for page to update
+      } else {
+        console.log('⚠️  Next day button not found');
+      }
+
       console.log('Clicking odds tab...');
       const clicked = await this.page.evaluate(() => {
         const allTabs = document.querySelectorAll('.filters__tab');
@@ -1065,6 +1165,9 @@ class FlashscoreScraper {
         default:
           console.log(`Unknown sport: ${sport}`);
       }
+
+      // Update all matches with correct scrape date
+      sportMatches = sportMatches.map(m => ({ ...m, date: this.scrapeDate }));
 
       this.matches.push(...sportMatches);
       console.log(`Total ${sport} matches: ${sportMatches.length}\n`);

@@ -43,14 +43,17 @@ Search queries to use:
 - "[home_team] [away_team] picks today"
 - "[home_team] vs [away_team] expert prediction [sport]"
 
-Output Format (JSON):
+IMPORTANT: Provide your response ONLY as valid JSON with ALL fields present:
+
+```json
 {
     "picks": ["home_win", "away_win", "draw", "over", "under", "btts"],
     "confidence": 0.0-1.0,
     "consensus": "description of majority opinion",
     "sources_count": number,
-    "summary": "brief summary of findings"
+    "summary": "detailed summary of all findings from searches - explain what sources say, consensus opinion, and any notable predictions"
 }
+```
 
 Important Rules:
 - ONLY report what you find from searches, don't add your own betting opinion
@@ -58,7 +61,8 @@ Important Rules:
 - Rate confidence based on: source quality, agreement level, recency
 - If you find no relevant tips, return confidence: 0.0 and picks: []
 - Always use google_search tool before responding
-"""
+- ALWAYS include the summary field with detailed explanation of findings
+- Return ONLY the JSON, no additional text"""
     
     agent = LlmAgent(
         name="internet_picks_agent",
@@ -112,11 +116,13 @@ Search for betting tips and predictions for this specific match. Provide your an
             'confidence': analysis.get('confidence', 0.0),
             'sources_count': analysis.get('sources_count', 0),
             'summary': analysis.get('summary', ''),
-            'consensus': analysis.get('consensus', 'No clear consensus')
+            'consensus': analysis.get('consensus', 'No clear consensus'),
+            'analysis': analysis.get('summary', '')  # Analysis field for notifications
         }
     
     def error_result(self, match: Dict, error: str) -> Dict:
         """Format error result for internet picks"""
+        error_message = f'Error: {error}'
         return {
             'match_id': match['id'],
             'homeTeam': match['homeTeam'],
@@ -125,8 +131,9 @@ Search for betting tips and predictions for this specific match. Provide your an
             'picks': [],
             'confidence': 0.0,
             'sources_count': 0,
-            'summary': f'Error: {error}',
-            'consensus': 'Error'
+            'summary': error_message,
+            'consensus': 'Error',
+            'analysis': error_message  # Analysis field for notifications
         }
     
     def _fallback_parse(self, text: str) -> Dict:

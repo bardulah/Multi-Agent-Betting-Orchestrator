@@ -112,7 +112,8 @@ class SynthesisAgent:
         self,
         match: Dict,
         internet_picks: Dict,
-        data_driven: Dict
+        data_driven: Dict,
+        intuition: Dict = None
     ) -> Dict:
         """
         Synthesize analyses and make final betting decision (sync wrapper)
@@ -121,6 +122,7 @@ class SynthesisAgent:
             match: Original match data with odds
             internet_picks: Analysis from Internet Picks Agent
             data_driven: Analysis from Data-Driven Agent
+            intuition: Analysis from Intuition Agent (optional)
 
         Returns:
             Final betting recommendation
@@ -130,7 +132,7 @@ class SynthesisAgent:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(self.synthesize_async(match, internet_picks, data_driven))
+            return loop.run_until_complete(self.synthesize_async(match, internet_picks, data_driven, intuition=intuition))
         finally:
             loop.close()
 
@@ -139,6 +141,7 @@ class SynthesisAgent:
         match: Dict,
         internet_picks: Dict = None,
         data_driven: Dict = None,
+        intuition: Dict = None,
         session=None
     ) -> Dict:
         """
@@ -148,6 +151,7 @@ class SynthesisAgent:
             match: Original match data with odds
             internet_picks: Analysis from Internet Picks Agent (or access from session.state)
             data_driven: Analysis from Data-Driven Agent (or access from session.state)
+            intuition: Analysis from Intuition Agent (optional)
             session: ADK session for state access (optional)
 
         Returns:
@@ -159,17 +163,35 @@ class SynthesisAgent:
         if session and not internet_picks:
             internet_picks = session.state.get("internet_picks_analysis", {})
             logger.debug("Loaded internet_picks_analysis from session state")
-        
+
         if session and not data_driven:
             data_driven = session.state.get("data_driven_analysis", {})
             logger.debug("Loaded data_driven_analysis from session state")
-        
+
+        if session and not intuition:
+            intuition = session.state.get("intuition_analysis", {})
+            logger.debug("Loaded intuition_analysis from session state")
+
         # Fallback to empty dicts if still missing
         internet_picks = internet_picks or {}
         data_driven = data_driven or {}
+        intuition = intuition or {}
 
         # Prepare odds information
         odds_text = self._format_odds(match.get('odds', {}))
+
+        # Format intuition factors if available
+        intuition_factors = intuition.get('intuition_factors', [])
+        intuition_section = ""
+        if intuition or intuition_factors:
+            intuition_section = f"""
+INTUITION ANALYSIS:
+Picks: {', '.join(intuition.get('picks', []))}
+Confidence: {intuition.get('confidence', 0.0)}
+Intuition Factors: {', '.join(intuition_factors) if intuition_factors else 'None identified'}
+Momentum: {intuition.get('momentum', 'No momentum analysis')}
+Psychology: {intuition.get('psychology', 'No psychological factors')}
+Analysis: {intuition.get('analysis', 'No analysis')[:500]}"""
 
         prompt = f"""Make a final betting decision for this match:
 
@@ -192,6 +214,7 @@ Picks: {', '.join(data_driven.get('picks', []))}
 Confidence: {data_driven.get('confidence', 0.0)}
 Analysis: {data_driven.get('analysis', 'No analysis')[:500]}
 Key Factors: {', '.join(data_driven.get('key_factors', []))}
+{intuition_section}
 
 Provide your final decision in JSON format.
 """
@@ -257,8 +280,16 @@ Provide your final decision in JSON format.
                 'reasoning': decision.get('reasoning', result_text[:600]),
                 'value_assessment': decision.get('value_assessment', ''),
                 'agreement_score': decision.get('agreement_score', 0.0),
-                'internet_picks_summary': internet_picks.get('summary', ''),
-                'data_driven_summary': data_driven.get('analysis', ''),
+                'internet_picks': {
+                    'picks': internet_picks.get('picks', []),
+                    'confidence': internet_picks.get('confidence', 0.0),
+                    'analysis': internet_picks.get('summary', internet_picks.get('analysis', ''))
+                },
+                'data_driven': {
+                    'picks': data_driven.get('picks', []),
+                    'confidence': data_driven.get('confidence', 0.0),
+                    'analysis': data_driven.get('analysis', '')
+                },
                 'odds_available': len(match.get('odds', {})) > 0
             }
 
@@ -433,7 +464,8 @@ Provide your final decision in JSON format.
         self,
         matches: List[Dict],
         internet_picks_results: List[Dict],
-        data_driven_results: List[Dict]
+        data_driven_results: List[Dict],
+        intuition_results: List[Dict] = None
     ) -> List[Dict]:
         """
         Process multiple matches
@@ -442,6 +474,7 @@ Provide your final decision in JSON format.
             matches: List of match dictionaries
             internet_picks_results: Results from Internet Picks Agent
             data_driven_results: Results from Data-Driven Agent
+            intuition_results: Results from Intuition Agent (optional for backwards compatibility)
 
         Returns:
             List of final recommendations
@@ -451,14 +484,16 @@ Provide your final decision in JSON format.
         # Create lookup dictionaries
         internet_picks_map = {r['match_id']: r for r in internet_picks_results}
         data_driven_map = {r['match_id']: r for r in data_driven_results}
+        intuition_map = {r['match_id']: r for r in (intuition_results or [])}
 
         for match in matches:
             match_id = match['id']
             internet_picks = internet_picks_map.get(match_id, {})
             data_driven = data_driven_map.get(match_id, {})
+            intuition = intuition_map.get(match_id, {})
 
             try:
-                recommendation = self.synthesize(match, internet_picks, data_driven)
+                recommendation = self.synthesize(match, internet_picks, data_driven, intuition)
                 recommendations.append(recommendation)
             except Exception as e:
                 logger.error(f"Error synthesizing match {match_id}: {e}")

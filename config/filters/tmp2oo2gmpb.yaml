@@ -1,0 +1,17 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues:
+  - "USA:\_NBA"
+  - "USA:\_NHL"
+  limits:
+    basketball: 6
+    hockey: 8
+  name: Interactive Selection
+  sports:
+  - basketball
+  - hockey

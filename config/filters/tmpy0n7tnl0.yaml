@@ -1,0 +1,13 @@
+filter:
+  analysis:
+    run_data_driven: true
+    run_internet_picks: true
+    run_synthesis: true
+  description: User-selected configuration
+  enabled: true
+  leagues: []
+  limits:
+    football: 50
+  name: Interactive Selection
+  sports:
+  - football

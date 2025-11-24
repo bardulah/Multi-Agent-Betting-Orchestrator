@@ -1039,8 +1039,110 @@ class FlashscoreScraper {
     return matches;
   }
 
-  async scrapeAll() {
+  async navigateToDate(targetDate) {
+    /**
+     * Navigate to a specific date on Flashscore
+     * Uses arrow buttons to navigate day-by-day
+     */
+    if (targetDate === 'today') {
+      return;
+    }
+
+    try {
+      let clickCount = 0;
+
+      if (targetDate === 'tomorrow') {
+        clickCount = 1;
+      } else if (targetDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const today = new Date();
+        const target = new Date(targetDate);
+        const diffMs = target - today;
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        clickCount = Math.max(0, diffDays);
+      }
+
+      if (clickCount === 0) {
+        return;
+      }
+
+      const direction = clickCount > 0 ? 'next' : 'prev';
+      const absCount = Math.abs(clickCount);
+
+      console.log(`📅 Navigating to ${targetDate} (${absCount} day${absCount > 1 ? 's' : ''})...\n`);
+
+      for (let i = 0; i < absCount; i++) {
+        const clicked = await this.page.evaluate((dir) => {
+          const btn = document.querySelector(`button[data-day-picker-arrow="${dir}"]`);
+          if (btn) {
+            btn.click();
+            return true;
+          }
+          return false;
+        }, direction);
+
+        if (!clicked) {
+          console.warn(`⚠️  Could not find ${direction} button`);
+          break;
+        }
+
+        await this.delay(4000);
+
+        const currentDate = await this.page.evaluate(() => {
+          const picker = document.querySelector('[data-testid="wcl-dayPickerButton"]');
+          return picker?.textContent?.trim() || 'unknown';
+        });
+
+        console.log(`  ✓ Step ${i + 1}/${absCount}: Now on ${currentDate}`);
+
+        try {
+          await this.page.waitForFunction(
+            () => document.querySelectorAll('.event__match').length > 0,
+            { timeout: 8000 }
+          );
+        } catch (err) {
+          console.warn(`  ⚠️  Timeout waiting for matches`);
+        }
+      }
+
+      console.log(`✓ Successfully navigated to ${targetDate}\n`);
+    } catch (error) {
+      console.warn(`⚠️  Navigation error: ${error.message}\n`);
+    }
+  }
+
+  parseTargetDate(targetDate) {
+    if (targetDate === 'today') {
+      return new Date().toISOString().split('T')[0];
+    } else if (targetDate === 'tomorrow') {
+      const tomorrow = new Date(Date.now() + 86400000);
+      return tomorrow.toISOString().split('T')[0];
+    } else if (targetDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return targetDate;
+    }
+    return new Date().toISOString().split('T')[0];
+  }
+
+  async scrapeAll(targetDate = 'today') {
     console.log('Starting scrape for all configured sports...\n');
+
+    // Load first sport page (needed for date picker to exist)
+    if (targetDate !== 'today' && this.config.sports.length > 0) {
+      const firstSport = this.config.sports[0].toLowerCase();
+      const sportUrl = {
+        football: 'https://www.flashscore.com/football/',
+        basketball: 'https://www.flashscore.com/basketball/',
+        tennis: 'https://www.flashscore.com/tennis/',
+        hockey: 'https://www.flashscore.com/hockey/',
+        baseball: 'https://www.flashscore.com/baseball/'
+      }[firstSport];
+
+      if (sportUrl) {
+        console.log(`Loading ${firstSport.toUpperCase()} page for date navigation...`);
+        await this.page.goto(sportUrl, { waitUntil: 'domcontentloaded' });
+        await this.delay(3000);
+        await this.navigateToDate(targetDate);
+      }
+    }
 
     for (const sport of this.config.sports) {
       console.log(`=== Scraping ${sport.toUpperCase()} ===`);
@@ -1065,6 +1167,9 @@ class FlashscoreScraper {
         default:
           console.log(`Unknown sport: ${sport}`);
       }
+
+      // Update all matches with target date
+      sportMatches = sportMatches.map(m => ({ ...m, date: this.parseTargetDate(targetDate) }));
 
       this.matches.push(...sportMatches);
       console.log(`Total ${sport} matches: ${sportMatches.length}\n`);
@@ -1103,6 +1208,7 @@ function parseCliArgs() {
     sports: ['football', 'basketball', 'tennis', 'hockey', 'baseball'],  // Default: all sports
     leagues: null,  // Default: all leagues
     limit: null,    // Default: no limit
+    date: 'today',  // Default: today's matches
     help: false
   };
 
@@ -1111,6 +1217,9 @@ function parseCliArgs() {
 
     if (arg === '--help' || arg === '-h') {
       options.help = true;
+    } else if (arg === '--date' && i + 1 < args.length) {
+      options.date = args[i + 1].toLowerCase();
+      i++;
     } else if (arg === '--sports' && i + 1 < args.length) {
       options.sports = args[i + 1].split(',').map(s => s.trim().toLowerCase());
       i++;
@@ -1193,6 +1302,7 @@ async function main() {
   console.log('╚════════════════════════════════════════════╝\n');
   console.log(`🎯 Configuration:`);
   console.log(`   Sports: ${options.sports.join(', ')}`);
+  console.log(`   Date: ${options.date}`);
   if (options.leagues) {
     console.log(`   Leagues: ${options.leagues.join(', ')}`);
   } else {
@@ -1212,7 +1322,7 @@ async function main() {
 
   try {
     await scraper.initialize();
-    await scraper.scrapeAll();
+    await scraper.scrapeAll(options.date);
 
     // Apply filtering after scraping
     if (options.limit) {

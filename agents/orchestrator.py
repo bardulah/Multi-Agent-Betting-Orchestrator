@@ -17,6 +17,7 @@ from google.adk.sessions import InMemorySessionService
 
 from .internet_picks_agent import InternetPicksAgent
 from .data_driven_agent import DataDrivenAgent
+from .intuition_agent import IntuitionAgent
 from .synthesis_agent import SynthesisAgent
 from .notification_agent import NotificationAgent
 from .betting_orchestrator_agent import BettingOrchestratorAgent
@@ -64,20 +65,71 @@ class BettingSystemOrchestrator:
         self.logger.info("Initializing agents...")
         self.internet_picks_agent = InternetPicksAgent(self.config)
         self.data_driven_agent = DataDrivenAgent(self.config)
+        self.intuition_agent = IntuitionAgent(self.config)
         self.synthesis_agent = SynthesisAgent(self.config)
         self.notification_agent = NotificationAgent(self.config)
         self.orchestrator_agent = BettingOrchestratorAgent(self.config)
 
         self.logger.info("All agents initialized successfully")
 
-    def run_scraper(self) -> List[Dict]:
+    def get_matches_file_path(self, date: str = 'today') -> Path:
+        """
+        Get the file path for matches based on date
+
+        Args:
+            date: 'today' or 'tomorrow'
+
+        Returns:
+            Path object for the date-specific matches file
+        """
+        base_file = self.config['storage']['matches_file']
+        base_path = Path(base_file)
+
+        if date.lower() == 'tomorrow':
+            # Insert '-tomorrow' before .json extension
+            return base_path.parent / f"{base_path.stem}-tomorrow.json"
+        else:
+            # Default to today's file (original path)
+            return base_path
+
+    def load_matches_from_file(self, date: str = 'today') -> List[Dict]:
+        """
+        Load matches from the pre-scraped JSON file (without re-scraping)
+
+        Args:
+            date: 'today' or 'tomorrow' to load date-specific file
+
+        Returns:
+            List of match dictionaries, or empty list if file not found
+        """
+        try:
+            matches_file = self.get_matches_file_path(date)
+            if matches_file.exists():
+                with open(matches_file, 'r') as f:
+                    data = json.load(f)
+                    matches = data.get('matches', [])
+                self.logger.info(f"Loaded {len(matches)} matches from {matches_file} (no scraping)")
+                return matches
+            else:
+                self.logger.info(f"Matches file not found: {matches_file}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error loading matches from file: {e}")
+            return []
+
+    def run_scraper(self, sports: List[str] = None, date: str = 'today') -> List[Dict]:
         """
         Run the Node.js scraper to get match data
+
+        Args:
+            sports: Optional list of sports to scrape (e.g., ['football', 'tennis'])
+                   If None, scrapes all sports. This allows filtering to only needed sports.
+            date: Which date to scrape ('today' or 'tomorrow'). Defaults to 'today'.
 
         Returns:
             List of match dictionaries
         """
-        self.logger.info("Running Flashscore scraper...")
+        self.logger.info(f"Running Flashscore scraper for {date}'s matches...")
 
         try:
             # Check if node_modules exists
@@ -93,9 +145,29 @@ class BettingSystemOrchestrator:
                     capture_output=True
                 )
 
+            # Choose npm script based on date
+            if date.lower() == 'tomorrow':
+                scraper_script = 'scrape:future'
+                self.logger.info("📅 Using tomorrow's scraper (flashscore-scraper-future.js)")
+            else:
+                scraper_script = 'scrape'
+                self.logger.info("📅 Using today's scraper (flashscore-scraper.js)")
+
+            # Get the target file path for this date
+            target_matches_file = self.get_matches_file_path(date)
+
+            # Build scraper command with optional sport filtering
+            scraper_cmd = ['npm', 'run', scraper_script]
+            if sports:
+                sports_str = ','.join(sports)
+                scraper_cmd.append('--')
+                scraper_cmd.append('--sports')
+                scraper_cmd.append(sports_str)
+                self.logger.info(f"Scraping only selected sports: {sports_str}")
+
             # Run the scraper
             result = subprocess.run(
-                ['npm', 'run', 'scrape'],
+                scraper_cmd,
                 cwd=scraper_dir,
                 check=True,
                 capture_output=True,
@@ -105,14 +177,22 @@ class BettingSystemOrchestrator:
             self.logger.info("Scraper completed successfully")
             self.logger.debug(f"Scraper output: {result.stdout}")
 
-            # Load scraped data
-            matches_file = Path(self.config['storage']['matches_file'])
-            if matches_file.exists():
-                with open(matches_file, 'r') as f:
+            # Load scraped data from default location and move to date-specific file
+            default_matches_file = Path(self.config['storage']['matches_file'])
+            if default_matches_file.exists():
+                with open(default_matches_file, 'r') as f:
                     data = json.load(f)
                     matches = data.get('matches', [])
-                    self.logger.info(f"Loaded {len(matches)} matches from scraper")
-                    return matches
+
+                # If using a date-specific file (tomorrow), move/copy the data there
+                if target_matches_file != default_matches_file:
+                    target_matches_file.parent.mkdir(parents=True, exist_ok=True)
+                    with open(target_matches_file, 'w') as f:
+                        json.dump(data, f, indent=2)
+                    self.logger.info(f"Saved {len(matches)} matches to {target_matches_file}")
+
+                self.logger.info(f"Loaded {len(matches)} matches from scraper")
+                return matches
             else:
                 self.logger.error("Matches file not found after scraping")
                 return []
@@ -127,18 +207,18 @@ class BettingSystemOrchestrator:
 
     def analyze_match_parallel(self, match: Dict) -> Dict:
         """
-        Analyze a single match with both agents in parallel
+        Analyze a single match with all agents in parallel
 
         Args:
             match: Match data dictionary
 
         Returns:
-            Dictionary with both analyses
+            Dictionary with all analyses
         """
         self.logger.info(f"Analyzing match: {match['homeTeam']} vs {match['awayTeam']}")
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            # Submit both agent tasks
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            # Submit all agent tasks in parallel
             internet_future = executor.submit(
                 self.internet_picks_agent.analyze_match,
                 match
@@ -147,15 +227,21 @@ class BettingSystemOrchestrator:
                 self.data_driven_agent.analyze_match,
                 match
             )
+            intuition_future = executor.submit(
+                self.intuition_agent.analyze_match,
+                match
+            )
 
-            # Wait for both to complete
+            # Wait for all to complete
             internet_result = internet_future.result()
             data_driven_result = data_driven_future.result()
+            intuition_result = intuition_future.result()
 
         return {
             'match': match,
             'internet_picks': internet_result,
-            'data_driven': data_driven_result
+            'data_driven': data_driven_result,
+            'intuition': intuition_result
         }
 
     async def process_all_matches_with_adk_orchestrator(self, matches: List[Dict]) -> List[Dict]:
@@ -212,6 +298,7 @@ class BettingSystemOrchestrator:
         # Extract results for synthesis and add match_id to each result
         internet_picks_results = []
         data_driven_results = []
+        intuition_results = []
 
         for analysis in analyses:
             match_id = analysis['match']['id']
@@ -226,15 +313,86 @@ class BettingSystemOrchestrator:
             data_driven['match_id'] = match_id
             data_driven_results.append(data_driven)
 
-        # Run synthesis agent (3-layer: Internet Picks + Data-Driven → Synthesis)
-        self.logger.info("Running synthesis agent (3-layer analysis)...")
-        recommendations = self.synthesis_agent.process_matches(
+            # Add match_id to intuition result
+            intuition = analysis['intuition']
+            intuition['match_id'] = match_id
+            intuition_results.append(intuition)
+
+        # Run synthesis agent (4-layer: Internet Picks + Data-Driven + Intuition → Synthesis)
+        self.logger.info("Running synthesis agent (4-layer analysis)...")
+        synthesis_recommendations = self.synthesis_agent.process_matches(
             matches,
             internet_picks_results,
-            data_driven_results
+            data_driven_results,
+            intuition_results
+        )
+
+        # Enhance recommendations with individual agent results (all 4 layers)
+        recommendations = self._enhance_recommendations_with_all_layers(
+            synthesis_recommendations,
+            internet_picks_results,
+            data_driven_results,
+            intuition_results
         )
 
         return recommendations
+
+    def _enhance_recommendations_with_all_layers(self, synthesis_recs: List[Dict],
+                                                  internet_picks: List[Dict],
+                                                  data_driven: List[Dict],
+                                                  intuition: List[Dict] = None) -> List[Dict]:
+        """
+        Enhance recommendations by including all 4 layers of agent analysis.
+
+        Args:
+            synthesis_recs: Final synthesis recommendations
+            internet_picks: Internet Picks agent results
+            data_driven: Data-Driven agent results
+            intuition: Intuition agent results (optional for backwards compatibility)
+
+        Returns:
+            Enhanced recommendations with all layers
+        """
+        # Create lookup maps for quick access
+        internet_map = {r.get('match_id'): r for r in internet_picks}
+        data_driven_map = {r.get('match_id'): r for r in data_driven}
+        intuition_map = {r.get('match_id'): r for r in (intuition or [])}
+
+        # Enhance each synthesis recommendation with individual layer results
+        for rec in synthesis_recs:
+            match_id = rec.get('match_id')
+
+            # Add Internet Picks layer
+            if match_id in internet_map:
+                internet_data = internet_map[match_id]
+                rec['internet_picks'] = {
+                    'picks': internet_data.get('picks', []),
+                    'confidence': internet_data.get('confidence', 0.0),
+                    'analysis': internet_data.get('analysis', '')
+                }
+
+            # Add Data-Driven layer
+            if match_id in data_driven_map:
+                data_driven_data = data_driven_map[match_id]
+                rec['data_driven'] = {
+                    'picks': data_driven_data.get('picks', []),
+                    'confidence': data_driven_data.get('confidence', 0.0),
+                    'analysis': data_driven_data.get('analysis', '')
+                }
+
+            # Add Intuition layer
+            if match_id in intuition_map:
+                intuition_data = intuition_map[match_id]
+                rec['intuition'] = {
+                    'picks': intuition_data.get('picks', []),
+                    'confidence': intuition_data.get('confidence', 0.0),
+                    'intuition_factors': intuition_data.get('intuition_factors', []),
+                    'momentum': intuition_data.get('momentum', ''),
+                    'psychology': intuition_data.get('psychology', ''),
+                    'analysis': intuition_data.get('analysis', '')
+                }
+
+        return synthesis_recs
 
     def save_results(self, recommendations: List[Dict]):
         """
@@ -360,12 +518,13 @@ class BettingSystemOrchestrator:
 
         return filtered
 
-    def run(self, filter_path: str = None):
+    def run(self, filter_path: str = None, date: str = 'today'):
         """
         Main execution method
 
         Args:
             filter_path: Optional path to filter configuration file
+            date: Which date to scrape ('today' or 'tomorrow'). Defaults to 'today'.
         """
         self.logger.info("=" * 60)
         self.logger.info("Starting Multi-Agent Betting System")
@@ -375,9 +534,23 @@ class BettingSystemOrchestrator:
         filter_config = self.load_filter_config(filter_path)
 
         try:
-            # Step 1: Scrape matches
-            self.logger.info("\n[STEP 1] Scraping matches from Flashscore...")
-            all_matches = self.run_scraper()
+            # Step 1: Load or scrape matches
+            self.logger.info("\n[STEP 1] Loading match data...")
+
+            # Try to load from existing file first (avoids unnecessary scraping)
+            all_matches = self.load_matches_from_file(date=date)
+
+            # If no pre-scraped data exists, run the scraper
+            if not all_matches:
+                self.logger.info("No pre-scraped matches found, running scraper...")
+                # Get selected sports from filter to optimize scraping
+                selected_sports = filter_config.get('sports', [])
+                if selected_sports:
+                    self.logger.info(f"Scraping only selected sports: {selected_sports}")
+                    all_matches = self.run_scraper(sports=selected_sports, date=date)
+                else:
+                    self.logger.info("No sport filter specified, scraping all sports...")
+                    all_matches = self.run_scraper(date=date)
 
             if not all_matches:
                 self.logger.warning("No matches found. Exiting.")
@@ -445,9 +618,20 @@ def main():
         help='Path to match filter configuration file (e.g., config/filters/balanced.yaml)'
     )
     parser.add_argument(
+        '--interactive',
+        action='store_true',
+        help='Launch interactive match selection mode'
+    )
+    parser.add_argument(
         '--test-notification',
         action='store_true',
         help='Send a test notification and exit'
+    )
+    parser.add_argument(
+        '--date',
+        default='today',
+        choices=['today', 'tomorrow'],
+        help='Which date to scrape matches for (default: today)'
     )
 
     args = parser.parse_args()
@@ -463,7 +647,29 @@ def main():
             print("✗ Failed to send test notification")
         return
 
-    orchestrator.run(filter_path=args.filter)
+    # Determine filter configuration
+    filter_config = None
+    filter_path = args.filter
+
+    # Launch interactive mode only if explicitly requested
+    if args.interactive:
+        from utils.interactive_selector import InteractiveSelector
+        selector = InteractiveSelector(date=args.date)
+        filter_config = selector.run_interactive_session()
+
+        if filter_config:
+            # Save the interactive config to a temporary filter file
+            import tempfile
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False, dir='config/filters') as f:
+                import yaml
+                yaml.dump({'filter': filter_config}, f)
+                filter_path = f.name
+                print(f"\n✓ Configuration saved to: {filter_path}\n")
+        else:
+            print("❌ No configuration selected. Exiting.")
+            return
+
+    orchestrator.run(filter_path=filter_path, date=args.date)
 
 
 if __name__ == '__main__':

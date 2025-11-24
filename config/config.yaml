@@ -1,11 +1,12 @@
 # Multi-Agent Betting System Configuration
 
-# Sports to scrape (football, hockey, basketball, tennis)
+# Sports to scrape (football, hockey, basketball, tennis, baseball)
 sports:
   - football
   - basketball
   - tennis
   - hockey
+  - baseball
 
 # Scraper settings
 scraper:
@@ -59,7 +60,7 @@ logging:
 # Scheduling
 schedule:
   enabled: true
-  time: "09:00"  # Daily run time (24-hour format)
+  time: "08:00"  # Daily run time (24-hour format)
   timezone: "UTC"
 
 # Data storage
