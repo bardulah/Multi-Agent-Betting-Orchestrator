@@ -194,9 +194,23 @@ class NotificationAgent:
                     f""
                 ])
 
+            if bet.get('intuition'):
+                intuition = bet['intuition']
+                factors_str = '\n   - '.join(intuition.get('intuition_factors', [])[:5])
+                lines.extend([
+                    f"🧠 INTUITION (Psychological & Momentum)",
+                    f"   Picks: {', '.join(intuition.get('picks', [])) if intuition.get('picks') else 'N/A'}",
+                    f"   Confidence: {intuition.get('confidence', 0.0):.1%}",
+                    f"   Key Factors:",
+                    f"   - {factors_str}" if factors_str else "   - No factors identified",
+                    f"   Momentum: {intuition.get('momentum', 'N/A')[:150]}",
+                    f"   Psychology: {intuition.get('psychology', 'N/A')[:150]}",
+                    f""
+                ])
+
             # Final synthesis recommendation
             lines.extend([
-                f"🎯 FINAL RECOMMENDATION (3-Layer Synthesis)",
+                f"🎯 FINAL RECOMMENDATION (4-Layer Synthesis)",
                 f"   Pick: {bet.get('recommended_pick', 'N/A').upper()}",
                 f"   Odds Target: {bet.get('recommended_odds', 'N/A')}",
                 f"   Confidence: {bet.get('confidence', 0.0):.1%}",
@@ -293,10 +307,30 @@ class NotificationAgent:
                 </div>
                 """
 
+            # Add Intuition layer
+            if bet.get('intuition'):
+                intuition = bet['intuition']
+                picks_html = ', '.join(intuition.get('picks', []))
+                intuition_factors = '<br>'.join(['• ' + f for f in intuition.get('intuition_factors', [])[:5]])  # Show top 5 factors
+                momentum = intuition.get('momentum', 'N/A')[:200] + ('...' if len(intuition.get('momentum', '')) > 200 else '')
+                psychology = intuition.get('psychology', 'N/A')[:200] + ('...' if len(intuition.get('psychology', '')) > 200 else '')
+
+                html += f"""
+                <div style="border-left: 4px solid #f39c12; padding: 10px; margin: 10px 0; background-color: #fef5e7;">
+                    <strong>🧠 Intuition (Psychological & Momentum)</strong><br>
+                    <strong>Picks:</strong> {picks_html if picks_html else 'N/A'}<br>
+                    <strong>Confidence:</strong> {intuition.get('confidence', 0.0):.1%}<br>
+                    <strong style="color: #d68910;">Key Factors:</strong><br>
+                    {intuition_factors if intuition_factors else 'No factors identified'}<br>
+                    <strong style="color: #d68910;">Momentum:</strong> {momentum}<br>
+                    <strong style="color: #d68910;">Psychology:</strong> {psychology}
+                </div>
+                """
+
             # Final synthesis recommendation
             html += f"""
                 <div style="border-left: 4px solid #27ae60; padding: 10px; margin: 10px 0; background-color: #d5f4e6;">
-                    <strong>🎯 Final Recommendation (3-Layer Synthesis)</strong><br>
+                    <strong>🎯 Final Recommendation (4-Layer Synthesis)</strong><br>
                     <span class="pick">Pick: {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')}</span><br>
                     <span class="confidence" style="color: {confidence_color};">Confidence: {bet.get('confidence', 0.0):.1%}</span> | Agreement: {bet.get('agreement_score', 0.0):.1%}
                 </div>
@@ -347,6 +381,15 @@ class NotificationAgent:
             if bet.get('data_driven'):
                 data_driven = bet['data_driven']
                 picks_summary.append(f"📊 {', '.join(data_driven.get('picks', [])[:1])}")  # Just first pick
+
+            if bet.get('intuition'):
+                intuition = bet['intuition']
+                if intuition.get('picks'):
+                    picks_summary.append(f"🧠 {', '.join(intuition.get('picks', [])[:1])}")  # Just first pick
+                if intuition.get('intuition_factors'):
+                    # Show top psychological factor in compact format
+                    top_factor = intuition.get('intuition_factors', [''])[0][:40]
+                    lines.append(f"   💡 {top_factor}")
 
             # Final pick
             lines.append(f"✅ <b>Final:</b> {bet.get('recommended_pick', 'N/A').upper()} @ {bet.get('recommended_odds', 'N/A')} {confidence_emoji}")
