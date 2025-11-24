@@ -120,25 +120,26 @@ Search for intuitive signals including:
 
 Provide analysis as JSON."""
 
-    def format_result(self, response: str, match: Dict) -> Dict:
+    def format_result(self, match: Dict, analysis: Dict) -> Dict:
         """Format the agent response into structured result"""
-        parsed = self._parse_response(response)
-
-        if parsed is None:
+        if analysis is None:
             return self.error_result(match, "Failed to parse intuition analysis")
 
         # Extract fields with defaults
-        picks = parsed.get('picks', [])
-        confidence = float(parsed.get('confidence', 0.0))
-        intuition_factors = parsed.get('intuition_factors', [])
-        momentum = parsed.get('momentum', '')
-        psychology = parsed.get('psychology', '')
-        summary = parsed.get('summary', '')
+        picks = analysis.get('picks', [])
+        confidence = float(analysis.get('confidence', 0.0))
+        intuition_factors = analysis.get('intuition_factors', [])
+        momentum = analysis.get('momentum', '')
+        psychology = analysis.get('psychology', '')
+        summary = analysis.get('summary', '')
 
         # Validate confidence is in range
         confidence = max(0.0, min(1.0, confidence))
 
         return {
+            'match_id': match['id'],
+            'homeTeam': match['homeTeam'],
+            'awayTeam': match['awayTeam'],
             'picks': picks,
             'confidence': confidence,
             'intuition_factors': intuition_factors,
@@ -151,6 +152,9 @@ Provide analysis as JSON."""
     def error_result(self, match: Dict, error: str) -> Dict:
         """Return error-safe result structure"""
         return {
+            'match_id': match['id'],
+            'homeTeam': match['homeTeam'],
+            'awayTeam': match['awayTeam'],
             'picks': [],
             'confidence': 0.0,
             'intuition_factors': [],
